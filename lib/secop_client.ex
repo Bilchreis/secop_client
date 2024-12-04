@@ -1,18 +1,18 @@
 defmodule SecopClient do
-  @moduledoc """
-  Documentation for `SecopClient`.
-  """
+  #alias SecopClient.UdpBroadcaster
+  alias NodeDiscover
+  use Application
+  def start(_type, _args) do
+    children = [
+      {NodeDiscover,fn  _ip, _port, message-> IO.puts("node Discovered!!! #{message}")end }
+    ]
 
-  @doc """
-  Hello world.
 
-  ## Examples
 
-      iex> SecopClient.hello()
-      :world
+    opts = [strategy: :one_for_one, name: NodeDiscover.Supervisor]
 
-  """
-  def hello do
-    :world
+    Supervisor.start_link(children, opts)
   end
+
+
 end
