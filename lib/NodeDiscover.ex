@@ -9,7 +9,7 @@ defmodule NodeDiscover do
   @message "{\"SECoP\": \"discover\"}"
   @broadcast_address {255, 255, 255, 255} # Broadcast address
   @port 10767
-  @interval 5000
+  @interval ((60*1000))
   require Logger
 
   # Starts the GenServer with a given UDP port and callback function
@@ -20,39 +20,47 @@ defmodule NodeDiscover do
        name: __MODULE__)
   end
 
-  @impl true
-  def init(socketstruct) do
-    # Open a UDP socket
-    {:ok, socket} = :gen_udp.open(0, [{:broadcast, true}, {:ip, {0, 0, 0, 0}},{:active, true}])
-
-    # Send the message to the broadcast address and port
-    :gen_udp.send(socket, @broadcast_address, @port, @message)
-    schedule_scan()
-
-    {:ok, %SocketStruct{socket: socket, callback: socketstruct.callback}}
-  end
 
 
-  def scan(pid) do
-    GenServer.cast(pid, :scan)
+
+  def scan() do
+    GenServer.cast(__MODULE__, :scan)
 
   end
 
   @impl true
   def handle_cast(:scan, socketstruct) do
       # Send the message to the broadcast address and port
+      Logger.info("Manually triggered Scan for new Nodes")
       send_discover(socketstruct)
     {:noreply, socketstruct}
   end
 
+
+  @impl true
+  def init(socketstruct) do
+    # Open a UDP socket
+    Logger.info("Opening discovery port")
+    {:ok, socket} = :gen_udp.open(0, [{:broadcast, true}, {:ip, {0, 0, 0, 0}},{:active, true}])
+
+    # Send the message to the broadcast address and port
+    Logger.info("Initial Scan...")
+    :gen_udp.send(socket, @broadcast_address, @port, @message)
+    schedule_scan()
+
+    {:ok, %SocketStruct{socket: socket, callback: socketstruct.callback}}
+  end
+
   @impl true
   def handle_info({:udp, _socket, ip, port, message}, socketstruct) do
-    # Log received message
-    #Logger.info("Received UDP message from #{inspect(ip)}:#{port} -> #{message}")
+
+
+    ip_string = :inet.ntoa(ip) |> to_string()
+    Logger.info("Node Discovered at #{ip_string}:#{port}")
 
     # Invoke the callback function
     socketstruct.callback.(ip, port, message)
-    #IO.puts(message)
+
 
     {:noreply, socketstruct}
   end
@@ -60,6 +68,7 @@ defmodule NodeDiscover do
 
   @impl true
   def handle_info(:work, socketstruct) do
+    Logger.info("Scheduled Node scan...")
     # Do the desired work here
     send_discover(socketstruct)
 

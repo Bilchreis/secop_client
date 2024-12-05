@@ -1,10 +1,12 @@
 defmodule SecopClient do
   #alias SecopClient.UdpBroadcaster
   alias NodeDiscover
+  alias ActiveNodeList
   use Application
   def start(_type, _args) do
     children = [
-      {NodeDiscover,fn  _ip, _port, message-> IO.puts("node Discovered!!! #{message}")end }
+      {ActiveNodeList,%{}},
+      {NodeDiscover,&ActiveNodeList.add_node_from_discovery/3}
     ]
 
 
