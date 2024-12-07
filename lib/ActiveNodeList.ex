@@ -28,12 +28,14 @@ defmodule ActiveNodeList do
   end
 
   @impl true
-  def handle_cast({:add_node_from_discovery,ip,port,message}, nodemap) do
+  def handle_cast({:add_node_from_discovery,ip,_port,message}, nodemap) do
+
     discover_map =  Jason.decode!(message)
 
     equipment_id = Map.get(discover_map,"equipment_id")
+    node_port = Map.get(discover_map,"port")
 
-    updated_nodemap = Map.put(nodemap,{ip,port},equipment_id)
+    updated_nodemap = Map.put(nodemap,{ip,node_port},equipment_id)
 
     {:noreply, updated_nodemap}
   end

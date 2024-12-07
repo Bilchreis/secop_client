@@ -6,6 +6,7 @@ end
 defmodule NodeDiscover do
   use GenServer
   alias SocketStruct
+  alias Jason
   @message "{\"SECoP\": \"discover\"}"
   @broadcast_address {255, 255, 255, 255} # Broadcast address
   @port 10767
@@ -56,7 +57,12 @@ defmodule NodeDiscover do
 
 
     ip_string = :inet.ntoa(ip) |> to_string()
-    Logger.info("Node Discovered at #{ip_string}:#{port}")
+    discover_map =  Jason.decode!(message)
+
+
+    node_port = Map.get(discover_map,"port")
+
+    Logger.info("Node Discovered at #{ip_string}:#{node_port}")
 
     # Invoke the callback function
     socketstruct.callback.(ip, port, message)
