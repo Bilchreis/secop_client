@@ -1,5 +1,7 @@
 defmodule TcpConnection do
-alias TcpConnection.Buffer
+
+  alias Buffer
+  alias BufferSupervisor
 
   require Logger
 
@@ -21,7 +23,11 @@ alias TcpConnection.Buffer
 
   @impl :gen_statem
   def init(opts) do
-    {:ok,buffer_pid} = Buffer.create()
+    {:ok, buffer_pid} = BufferSupervisor.start_buffer()
+
+    # link Buffer and TcpConnection Processes to make
+    # them both crash if Buffer crashes
+    Process.link(buffer_pid)
 
     state = %{
       host: opts[:host],
@@ -90,59 +96,118 @@ alias TcpConnection.Buffer
 
 
 
-
-  defmodule Buffer do
-    @moduledoc "Buffer the data received to parse out statements"
+end
 
 
-    use GenServer
-    require Logger
+defmodule TcpConnectionSupervisor do
+  use DynamicSupervisor
+
+  def start_link(_args) do
+    DynamicSupervisor.start_link(__MODULE__, :ok, name: __MODULE__)
+  end
+
+  def init(:ok) do
+    DynamicSupervisor.init(strategy: :one_for_one)
+  end
+
+  def start_connection(opts) do
+    DynamicSupervisor.start_child(__MODULE__, {TcpConnection, opts})
+  end
+end
+
+defmodule Buffer do
+  @moduledoc "Buffer the data received to parse out statements"
 
 
-    @eol <<10>>
-    @initial_state ""
+  use GenServer
+  require Logger
 
-    def create do
-      GenServer.start_link(__MODULE__, @initial_state)
-    end
 
-    def receive(pid \\ __MODULE__, data) do
-      GenServer.cast(pid, {:receive, data})
-    end
+  @eol <<10>>
+  @initial_state ""
 
-    @impl true
-    def init(buffer) do
-      {:ok, buffer}
-    end
+  @spec create() :: :ignore | {:error, any()} | {:ok, pid()}
+  def create(buffer_name \\ nil) do
+    GenServer.start_link(__MODULE__, @initial_state,name: buffer_name)
+  end
 
-    @impl true
-    def handle_cast({:receive, data}, buffer) do
-      buffer
-      |> append(data)
-      |> process
-    end
+  def receive(pid \\ __MODULE__, data) do
+    GenServer.cast(pid, {:receive, data})
+  end
 
-    defp append(buffer, ""), do: buffer
-    defp append(buffer, data), do: buffer <> data
+  @impl true
+  def init(buffer) do
+    {:ok, buffer}
+  end
 
-    defp process(buffer) do
-      case extract(buffer) do
-        {:statement, buffer, statement} ->
-          Logger.info("message: #{statement}")
-          process(buffer)
-        {:nothing, buffer} ->
-          {:noreply, buffer}
-      end
-    end
+  @impl true
+  def handle_cast({:receive, data}, buffer) do
+    buffer
+    |> append(data)
+    |> process
+  end
 
-    defp extract(buffer) do
-      case String.split(buffer, @eol, parts: 2) do
-        [match, rest] -> {:statement, rest, match}
-        [rest] -> {:nothing, rest}
-      end
+  defp append(buffer, ""), do: buffer
+  defp append(buffer, data), do: buffer <> data
+
+  defp process(buffer) do
+    case extract(buffer) do
+      {:statement, buffer, statement} ->
+        Logger.info("message: #{statement}")
+        process(buffer)
+      {:nothing, buffer} ->
+        {:noreply, buffer}
     end
   end
 
+  defp extract(buffer) do
+    case String.split(buffer, @eol, parts: 2) do
+      [match, rest] -> {:statement, rest, match}
+      [rest] -> {:nothing, rest}
+    end
+  end
+end
 
 
+defmodule BufferSupervisor do
+  use DynamicSupervisor
+
+  def start_link(_) do
+    DynamicSupervisor.start_link(__MODULE__, [], name: __MODULE__)
+  end
+
+  def init(_) do
+    DynamicSupervisor.init(strategy: :one_for_one)
+  end
+
+  def start_buffer() do
+    DynamicSupervisor.start_child(__MODULE__, {Buffer, []})
+  end
+end
+
+defmodule ConnectionSupervisor do
+  use Supervisor
+
+  def start_link(opts) do
+    Supervisor.start_link(__MODULE__, opts)
+  end
+
+  def init(opts) do
+    buffer_opts = opts[:buffer_opts] || []
+
+    children = [
+      {Buffer, buffer_opts},
+      {TcpConnection, opts}
+    ]
+
+    Supervisor.init(children, strategy: :rest_for_one)
+
+    def connect(opts) do
+      DynamicSupervisor.start_child(
+        ConnectionSupervisor,
+        {ConnectionSupervisor, [opts]}
+      )
+
+    end
+  end
 end
