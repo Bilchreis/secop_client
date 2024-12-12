@@ -1,6 +1,5 @@
 defmodule SocketStruct do
   defstruct socket: nil, callback: nil
-
 end
 
 defmodule NodeDiscover do
@@ -8,41 +7,38 @@ defmodule NodeDiscover do
   alias SocketStruct
   alias Jason
   @message "{\"SECoP\": \"discover\"}"
-  @broadcast_address {255, 255, 255, 255} # Broadcast address
+  # Broadcast address
+  @broadcast_address {255, 255, 255, 255}
   @port 10767
-  @interval ((60*1000))
+  @interval 60 * 1000
   require Logger
 
   # Starts the GenServer with a given UDP port and callback function
   def start_link(callback_function) do
     GenServer.start_link(
       __MODULE__,
-      %SocketStruct{socket: nil,callback: callback_function},
-       name: __MODULE__)
+      %SocketStruct{socket: nil, callback: callback_function},
+      name: __MODULE__
+    )
   end
-
-
-
 
   def scan() do
     GenServer.cast(__MODULE__, :scan)
-
   end
 
   @impl true
   def handle_cast(:scan, socketstruct) do
-      # Send the message to the broadcast address and port
-      Logger.info("Manually triggered Scan for new Nodes")
-      send_discover(socketstruct)
+    # Send the message to the broadcast address and port
+    Logger.info("Manually triggered Scan for new Nodes")
+    send_discover(socketstruct)
     {:noreply, socketstruct}
   end
-
 
   @impl true
   def init(socketstruct) do
     # Open a UDP socket
     Logger.info("Opening discovery port")
-    {:ok, socket} = :gen_udp.open(0, [{:broadcast, true}, {:ip, {0, 0, 0, 0}},{:active, true}])
+    {:ok, socket} = :gen_udp.open(0, [{:broadcast, true}, {:ip, {0, 0, 0, 0}}, {:active, true}])
 
     # Send the message to the broadcast address and port
     Logger.info("Initial Scan...")
@@ -54,23 +50,18 @@ defmodule NodeDiscover do
 
   @impl true
   def handle_info({:udp, _socket, ip, port, message}, socketstruct) do
-
-
     ip_string = :inet.ntoa(ip) |> to_string()
-    discover_map =  Jason.decode!(message)
+    discover_map = Jason.decode!(message)
 
-
-    node_port = Map.get(discover_map,"port")
+    node_port = Map.get(discover_map, "port")
 
     Logger.info("Node Discovered at #{ip_string}:#{node_port}")
 
     # Invoke the callback function
     socketstruct.callback.(ip, port, message)
 
-
     {:noreply, socketstruct}
   end
-
 
   @impl true
   def handle_info(:work, socketstruct) do
@@ -100,6 +91,4 @@ defmodule NodeDiscover do
   defp send_discover(socketstruct) do
     :gen_udp.send(socketstruct.socket, @broadcast_address, @port, @message)
   end
-
-
 end

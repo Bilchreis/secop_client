@@ -1,47 +1,64 @@
-defmodule SEC_Node do
-  use GenServer
+defmodule SEC_Node_Statem do
   require Logger
   alias NodeTable
   alias UUID
-
   alias TcpConnection
+
+  @behaviour :gen_statem
+
+  @initial_state :disconnected
+
   # Public
   def start_link(opts) do
-    GenServer.start_link(
+    :gen_statem.start_link(
+      {:via, Registry.SEC_Node_Statem, {opts[:host], opts[:port]}},
       __MODULE__,
       opts,
-      name: {:via, Registry, {Registry.SEC_Node, {opts[:host], opts[:port]}}}
+      []
     )
   end
 
+  def child_spec(opts) do
+    %{
+      id: __MODULE__,
+      start: {__MODULE__, :start_link, [opts]},
+      type: :worker,
+      restart: :permanent,
+      shutdown: 500
+    }
+  end
+
+  @impl :gen_statem
+  def callback_mode, do: :handle_event_function
+
   def describe(node_id) do
-    [{sec_node_pid, _value}] = Registry.lookup(Registry.SEC_Node, node_id)
-    GenServer.call(sec_node_pid, :describe)
+    [{sec_node_pid, _value}] = Registry.lookup(Registry.SEC_Node_Statem, node_id)
+    :gen_statem.call(sec_node_pid, :describe)
   end
 
   def activate(node_id) do
-    [{sec_node_pid, _value}] = Registry.lookup(Registry.SEC_Node, node_id)
-    GenServer.call(sec_node_pid, :activate)
+    [{sec_node_pid, _value}] = Registry.lookup(Registry.SEC_Node_Statem, node_id)
+    :gen_statem.call(sec_node_pid, :activate)
   end
 
   def deactivate(node_id) do
-    [{sec_node_pid, _value}] = Registry.lookup(Registry.SEC_Node, node_id)
-    GenServer.call(sec_node_pid, :deactivate)
+    [{sec_node_pid, _value}] = Registry.lookup(Registry.SEC_Node_Statem, node_id)
+    :gen_statem.call(sec_node_pid, :deactivate)
   end
 
   def change(node_id, module, parameter, value) do
-    [{sec_node_pid, _value}] = Registry.lookup(Registry.SEC_Node, node_id)
-    GenServer.call(sec_node_pid, {:change, module, parameter, value})
+    [{sec_node_pid, _value}] = Registry.lookup(Registry.SEC_Node_Statem, node_id)
+    :gen_statem.call(sec_node_pid, {:change, module, parameter, value})
   end
 
   def execute_command(node_id, module, command, value) do
-    [{sec_node_pid, _value}] = Registry.lookup(Registry.SEC_Node, node_id)
-    GenServer.call(sec_node_pid, {:do, module, command, value})
+    [{sec_node_pid, _value}] = Registry.lookup(Registry.SEC_Node_Statem, node_id)
+    :gen_statem.call(sec_node_pid, {:do, module, command, value})
   end
 
   def execute_command(node_id, module, command) do
-    [{sec_node_pid, _value}] = Registry.lookup(Registry.SEC_Node, node_id)
-    GenServer.call(sec_node_pid, {:do, module, command, "null"})
+    [{sec_node_pid, _value}] = Registry.lookup(Registry.SEC_Node_Statem, node_id)
+    :gen_statem.call(sec_node_pid, {:do, module, command, "null"})
   end
 
   # callbacks
@@ -59,15 +76,60 @@ defmodule SEC_Node do
     }
 
     TcpConnection.connect_supervised(opts)
+
     NodeTable.start(state.node_id)
 
-    {:ok, state}
+    {:ok, @initial_state, state, {:next_event, :internal, :connect}}
+  end
+
+  @impl :gen_statem
+  def handle_event(:internal, :connect, :disconnected, %{node_id: node_id} = state) do
+    case TcpConnection.is_connected(node_id) do
+      true -> {:next_state, :connected, state}
+      false -> {:keep_state, state, {{:timeout, :reconnect}, 5000, nil}}
+    end
+  end
+
+  # periodically check if socket is connected
+  def handle_event({:timeout, :reconnect}, nil, :disconnected, state) do
+    {:keep_state, state, {:next_event, :internal, :connect}}
+  end
+
+  def handle_event(:info, :socket_disconnected, machine_state, state)
+      when machine_state in [:connected, :initialized] do
+    {:next_state, :disconnected, state, {:next_event, :internal, :connect}}
+  end
+
+  def handle_event(:info, :socket_connected, :disconnected, state) do
+    {:next_state, :connected, state, {:next_event, :internal, :handshake}}
+  end
+
+  def handle_event(:internal, :handshake, :connected, %{node_id: node_id,description: description} = state) do
+    #TODO IDN
+    Logger.info("Initial Describe Message sent")
+    TcpConnection.send_message(node_id, ~c"describe .\n")
+    receive do
+      {:describe, specifier, structure_report} ->
+        Logger.info("Description received")
+        equipment_id = Map.get(structure_report, "equipment_id")
+        case MapDiff.diff(structure_report,description) do
+          %{changed: :equal,value: _} ->  updated_state_descr = %{state | description: structure_report, equipment_id: equipment_id}
+          _ -> updated_state_descr = %{state | description: structure_report,uuid: UUID.uuid1(), equipment_id: equipment_id}
+        end
+
+
+        return = {:next_state, }
+    after
+      15000 -> {:reply, :error, state}
+    end
+
+
   end
 
   @impl true
   def handle_call(:describe, _from, %{node_id: node_id} = state) do
     Logger.info("Describe Message sent")
-    TcpConnection.send_message(node_id, ~c"describe .\n")
+    TcpConnection.send_message([:identifier, node_id], ~c"describe .\n")
 
     receive do
       {:describe, specifier, structure_report} ->
@@ -83,7 +145,7 @@ defmodule SEC_Node do
   @impl true
   def handle_call(:activate, _from, %{node_id: node_id} = state) do
     Logger.info("Activate Message sent")
-    TcpConnection.send_message(node_id, ~c"activate\n")
+    TcpConnection.send([:identifier, node_id], ~c"activate\n")
 
     receive do
       {:active} ->
@@ -98,7 +160,7 @@ defmodule SEC_Node do
   @impl true
   def handle_call(:deactivate, _from, %{node_id: node_id} = state) do
     Logger.info("Deactivate Message sent")
-    TcpConnection.send_message(node_id, ~c"deactivate\n")
+    TcpConnection.send([:identifier, node_id], ~c"deactivate\n")
 
     receive do
       {:inactive} ->
@@ -116,7 +178,7 @@ defmodule SEC_Node do
 
     Logger.info("Change Message '#{String.trim_trailing(message)}' sent")
 
-    TcpConnection.send_message(node_id, String.to_charlist(message))
+    TcpConnection.send([:identifier, node_id], String.to_charlist(message))
 
     receive do
       {:changed, r_module, r_parameter, data_report} ->
@@ -132,7 +194,7 @@ defmodule SEC_Node do
     message = "do #{module}:#{command} #{value}\n"
 
     Logger.info("Do Message '#{String.trim_trailing(message)}' sent")
-    TcpConnection.send_message(node_id, String.to_charlist(message))
+    TcpConnection.send([:identifier, node_id], String.to_charlist(message))
 
     receive do
       {:done, r_module, r_command, data_report} ->
@@ -190,48 +252,5 @@ defmodule SEC_Node do
   def handle_info({:changed, module, parameter, data_report}, state) do
     Logger.warning("received async CHANGED message #{module}:#{parameter} data: #{data_report}")
     {:noreply, state}
-  end
-end
-
-defmodule NodeTable do
-  require Logger
-
-  @lookup_table :node_table_lookup
-
-  def start(node_id) do
-    case :ets.whereis(:node_table_lookup) do
-      :undefined -> :ets.new(@lookup_table, [:set, :public, :named_table])
-    end
-
-    # Create an ETS table with the table name as an atom
-    table = :ets.new(:ets_table, [:set, :public])
-
-    true = :ets.insert(@lookup_table, {node_id, table})
-
-    {:ok, table}
-  end
-
-  def insert(node_id, key, value) do
-    {:ok, table} = get_table(node_id)
-
-    true = :ets.insert(table, {key, value})
-
-    {:ok, :inserted}
-  end
-
-  def lookup(node_id, key) do
-    {:ok, table} = get_table(node_id)
-
-    case :ets.lookup(table, key) do
-      [{_, value}] -> {:ok, value}
-      [] -> {:error, :notfound}
-    end
-  end
-
-  defp get_table(node_id) do
-    case :ets.lookup(@lookup_table, node_id) do
-      [{_, table}] -> {:ok, table}
-      [] -> {:error, :notfound}
-    end
   end
 end

@@ -1,10 +1,8 @@
 defmodule TcpConnection do
-
   alias Buffer
   alias BufferSupervisor
 
   require Logger
-
 
   @behaviour :gen_statem
 
@@ -20,7 +18,12 @@ defmodule TcpConnection do
   end
 
   def start_link(opts) do
-    :gen_statem.start_link({:via, Registry, {Registry.TcpConnection, {opts[:host], opts[:port]}}},__MODULE__, opts, [])
+    :gen_statem.start_link(
+      {:via, Registry, {Registry.TcpConnection, {opts[:host], opts[:port]}}},
+      __MODULE__,
+      opts,
+      []
+    )
   end
 
   ## Callbacks
@@ -40,25 +43,24 @@ defmodule TcpConnection do
 
   @impl :gen_statem
   def init(opts) do
-
-
-
-
     state = %{
       host: opts[:host],
       port: opts[:port],
       socket: nil,
-      reconnect_backoff: opts[:reconnect_backoff] || 500,
-
+      reconnect_backoff: opts[:reconnect_backoff] || 500
     }
 
     {:ok, @initial_state, state, {:next_event, :internal, :connect}}
   end
 
   @impl :gen_statem
-  def handle_event(:internal, :connect, :disconnected, state) do
+  def handle_event(:internal, :connect, :disconnected, %{host: host, port: port} = state) do
     case :gen_tcp.connect(state.host, state.port, [:binary, active: true]) do
       {:ok, socket} ->
+        Registry.dispatch(Registry.SEC_Node_Statem, {host, port}, fn entries ->
+          for {pid, _} <- entries, do: send(pid, :socket_connected)
+        end)
+
         Logger.info("Connected to #{state.host}:#{state.port}")
         {:next_state, :connected, %{state | socket: socket}}
 
@@ -72,59 +74,76 @@ defmodule TcpConnection do
     {:keep_state, state, {:next_event, :internal, :connect}}
   end
 
-  def handle_event(:info, {:tcp, _socket, data}, :connected, %{host: host,port: port} = state) do
-
-    [{buffer_pid,_value}] = Registry.lookup(Registry.Buffer,{host,port})
-    Buffer.receive(buffer_pid,data)
+  def handle_event(:info, {:tcp, _socket, data}, :connected, %{host: host, port: port} = state) do
+    [{buffer_pid, _value}] = Registry.lookup(Registry.Buffer, {host, port})
+    Buffer.receive(buffer_pid, data)
 
     # Update the buffer with remaining data
     {:keep_state, state}
   end
 
-  def handle_event(:info, {:tcp_closed, _socket}, :connected, state) do
+  def handle_event(:info, {:tcp_closed, _socket}, :connected, %{host: host, port: port} = state) do
     Logger.warning("Connection closed by server")
+
+    Registry.dispatch(Registry.SEC_Node_Statem, {host, port}, fn entries ->
+      for {pid, _} <- entries, do: send(pid, :socket_disconnected)
+    end)
+
     {:next_state, :disconnected, %{state | socket: nil}, {:next_event, :internal, :connect}}
   end
 
-  def handle_event(:info, {:tcp_error, _socket, reason}, :connected, state) do
+  def handle_event(
+        :info,
+        {:tcp_error, _socket, reason},
+        :connected,
+        %{host: host, port: port} = state
+      ) do
     Logger.error("TCP error: #{inspect(reason)}")
+
+    Registry.dispatch(Registry.SEC_Node_Statem, {host, port}, fn entries ->
+      for {pid, _} <- entries, do: send(pid, :socket_disconnected)
+    end)
+
     {:next_state, :disconnected, %{state | socket: nil}, {:next_event, :internal, :connect}}
   end
 
   def handle_event({:call, from}, {:send, data}, :connected, state) do
-    Logger.info("sending data: #{data}")
+    # Logger.info("sending data: #{data}")
+
     case :gen_tcp.send(state.socket, data) do
       :ok ->
-        Logger.info("received reply")
         :gen_statem.reply(from, :ok)
 
-      {:error, reason} -> :gen_statem.reply(from, {:error, reason})
+      {:error, reason} ->
+        :gen_statem.reply(from, {:error, reason})
     end
 
     {:keep_state, state}
   end
 
-  ## Helpers
-
-  def send(identifier, data) do
-   conn_pid =
-     case identifier do
-      [:identifier, {host,port}] -> Registry.lookup(Registry.TcpConnection,{host,port}) |> List.last()|> elem(0)
-      [:pid, pid] -> pid
-    end
-    :gen_statem.call(conn_pid, {:send, data})
+  def handle_event({:call, from}, :is_connected, :connected, state) do
+    :gen_statem.reply(from, true)
+    {:keep_state, state}
   end
 
+  def handle_event({:call, from}, :is_connected, :disconnected, state) do
+    :gen_statem.reply(from, false)
+    {:keep_state, state}
+  end
 
+  ## Helpers
+  def is_connected(node_id) do
+    [{conn_pid, _value}] = Registry.lookup(Registry.TcpConnection, node_id)
+    :gen_statem.call(conn_pid, :is_connected)
+  end
 
-
+  def send_message(node_id, data) do
+    [{conn_pid, _value}] = Registry.lookup(Registry.TcpConnection, node_id)
+    :gen_statem.call(conn_pid, {:send, data})
+  end
 end
 
-
-
 defmodule BufferSupervisor do
-
-
   use DynamicSupervisor
 
   def start_link(init_arg) do
@@ -137,10 +156,9 @@ defmodule BufferSupervisor do
   end
 
   def start_child(buffer_identifier) do
-    DynamicSupervisor.start_child(__MODULE__,{Buffer,buffer_identifier})
+    DynamicSupervisor.start_child(__MODULE__, {Buffer, buffer_identifier})
   end
 end
-
 
 defmodule TcpConnectionSupervisor do
   # Automatically defines child_spec/1
@@ -156,21 +174,16 @@ defmodule TcpConnectionSupervisor do
   end
 
   def start_child(opts) do
-    DynamicSupervisor.start_child(__MODULE__,{TcpConnection,opts})
+    DynamicSupervisor.start_child(__MODULE__, {TcpConnection, opts})
   end
 end
-
-
-
 
 defmodule Buffer do
   @moduledoc "Buffer the data received to parse out statements"
 
-
   use GenServer
   require Logger
   alias SECoP_Parser
-
 
   @eol <<10>>
   @initial_state ""
@@ -179,9 +192,11 @@ defmodule Buffer do
     state = %{
       buffer: @initial_state,
       node_id: buffer_identifier
-  }
+    }
 
-    GenServer.start_link(__MODULE__, state,name: {:via, Registry, {Registry.Buffer, buffer_identifier}})
+    GenServer.start_link(__MODULE__, state,
+      name: {:via, Registry, {Registry.Buffer, buffer_identifier}}
+    )
   end
 
   def receive(pid \\ __MODULE__, data) do
@@ -194,23 +209,27 @@ defmodule Buffer do
   end
 
   @impl true
-  def handle_cast({:receive, data}, %{buffer: buffer} = state) do
-    updated_buffer = buffer  |> append(data) |> process
+  def handle_cast({:receive, data}, state) do
+    updated_state = state |> append(data) |> process
 
-    {:noreply, %{state | :buffer => updated_buffer}}
-
+    {:noreply, updated_state}
   end
 
-  defp append(buffer, ""), do: buffer
-  defp append(buffer, data), do: buffer <> data
+  defp append(state, ""), do: state
 
-  defp process(buffer) do
+  defp append(%{buffer: buffer} = state, data) do
+    updated_buffer = buffer <> data
+    %{state | buffer: updated_buffer}
+  end
+
+  defp process(%{buffer: buffer, node_id: node_id} = state) do
     case extract(buffer) do
-      {:statement, buffer, statement} ->
-        SECoP_Parser.parse(statement)
-        process(buffer)
-      {:nothing, buffer} ->
-        buffer
+      {:statement, updated_buffer, statement} ->
+        Task.start(fn -> SECoP_Parser.parse(node_id, statement) end)
+        process(%{state | buffer: updated_buffer})
+
+      {:nothing, updated_buffer} ->
+        %{state | buffer: updated_buffer}
     end
   end
 
