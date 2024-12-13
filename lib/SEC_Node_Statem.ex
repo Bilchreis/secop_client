@@ -10,8 +10,10 @@ defmodule SEC_Node_Statem do
 
   # Public
   def start_link(opts) do
+    Logger.info("starting secnode")
+
     :gen_statem.start_link(
-      {:via, Registry.SEC_Node_Statem, {opts[:host], opts[:port]}},
+      {:via, Registry, {Registry.SEC_Node_Statem, {opts[:host], opts[:port]}}},
       __MODULE__,
       opts,
       []
@@ -51,6 +53,16 @@ defmodule SEC_Node_Statem do
     :gen_statem.call(sec_node_pid, {:change, module, parameter, value})
   end
 
+  def read(node_id, module, parameter, value) do
+    [{sec_node_pid, _value}] = Registry.lookup(Registry.SEC_Node_Statem, node_id)
+    :gen_statem.call(sec_node_pid, {:read, module, parameter, value})
+  end
+
+  def ping(node_id) do
+    [{sec_node_pid, _value}] = Registry.lookup(Registry.SEC_Node_Statem, node_id)
+    :gen_statem.call(sec_node_pid, :ping)
+  end
+
   def execute_command(node_id, module, command, value) do
     [{sec_node_pid, _value}] = Registry.lookup(Registry.SEC_Node_Statem, node_id)
     :gen_statem.call(sec_node_pid, {:do, module, command, value})
@@ -72,9 +84,11 @@ defmodule SEC_Node_Statem do
       reconnect_backoff: opts[:reconnect_backoff] || 5000,
       description: nil,
       active: false,
-      uuid: UUID.uuid1()
+      uuid: UUID.uuid1(),
+      error: false
     }
 
+    Logger.info("opening connection")
     TcpConnection.connect_supervised(opts)
 
     NodeTable.start(state.node_id)
@@ -85,7 +99,7 @@ defmodule SEC_Node_Statem do
   @impl :gen_statem
   def handle_event(:internal, :connect, :disconnected, %{node_id: node_id} = state) do
     case TcpConnection.is_connected(node_id) do
-      true -> {:next_state, :connected, state}
+      true -> {:next_state, :connected, state, {:next_event, :internal, :handshake}}
       false -> {:keep_state, state, {{:timeout, :reconnect}, 5000, nil}}
     end
   end
@@ -93,6 +107,16 @@ defmodule SEC_Node_Statem do
   # periodically check if socket is connected
   def handle_event({:timeout, :reconnect}, nil, :disconnected, state) do
     {:keep_state, state, {:next_event, :internal, :connect}}
+  end
+
+  # Do noting if Connection was already established again
+  def handle_event({:timeout, :reconnect}, nil, :initialized, _state) do
+    {:keep_state_and_data, []}
+  end
+
+  # Do noting if Connection was already established again
+  def handle_event({:timeout, :reconnect}, nil, :connected, _state) do
+    {:keep_state_and_data, []}
   end
 
   def handle_event(:info, :socket_disconnected, machine_state, state)
@@ -104,97 +128,183 @@ defmodule SEC_Node_Statem do
     {:next_state, :connected, state, {:next_event, :internal, :handshake}}
   end
 
-  def handle_event(:internal, :handshake, :connected, %{node_id: node_id,description: description} = state) do
-    #TODO IDN
+  def handle_event(:info, :socket_connected, :connected, _state) do
+    {:keep_state_and_data, []}
+  end
+
+  def handle_event(:info, :socket_connected, :initialized, _state) do
+    {:keep_state_and_data, []}
+  end
+
+  def handle_event({:call, from}, message, :disconnected, _state) do
+    Logger.warning("Node call while disconnected: #{elem(message, 0)}")
+    {:keep_state_and_data, {:reply, from, {:error, :disconnected}}}
+  end
+
+  def handle_event({:call, from}, message, :connected, _state) do
+    Logger.warning("Node call before initialization: #{elem(message, 0)}")
+    {:keep_state_and_data, {:reply, from, {:error, :uninitialized}}}
+  end
+
+  def handle_event(
+        :internal,
+        :handshake,
+        :connected,
+        %{node_id: node_id, description: description} = state
+      ) do
+    # TODO IDN
+
     Logger.info("Initial Describe Message sent")
-    TcpConnection.send_message(node_id, ~c"describe .\n")
-    receive do
-      {:describe, specifier, structure_report} ->
-        Logger.info("Description received")
+
+    case send_describe_message(node_id) do
+      {:ok, _specifier, structure_report} ->
         equipment_id = Map.get(structure_report, "equipment_id")
-        case MapDiff.diff(structure_report,description) do
-          %{changed: :equal,value: _} ->  updated_state_descr = %{state | description: structure_report, equipment_id: equipment_id}
-          _ -> updated_state_descr = %{state | description: structure_report,uuid: UUID.uuid1(), equipment_id: equipment_id}
+
+        case MapDiff.diff(structure_report, description) do
+          # Notihng changed, probably just a network disconnect
+          %{changed: :equal, value: _} ->
+            Logger.info("Descriptive data constant --> connected & initialized")
+            {:next_state, :initialized, state, {:next_event, :internal, :activate}}
+
+          # Description changed update uuid, equipment_id and description
+          _ ->
+            Logger.info("Descriptive data changed issuing new uuid --> connected & initialized")
+
+            updated_state_descr = %{
+              state
+              | description: structure_report,
+                uuid: UUID.uuid1(),
+                equipment_id: equipment_id
+            }
+
+            {:next_state, :initialized, updated_state_descr, {:next_event, :internal, :activate}}
         end
 
+      {:error, :timeout} ->
+        Logger.warning(
+          "NO answer on describe message for #{elem(node_id, 0)}:#{elem(node_id, 1)}, going into ERROR state"
+        )
 
-        return = {:next_state, }
-    after
-      15000 -> {:reply, :error, state}
-    end
+        {:next_state, :could_not_initialize, state}
 
-
-  end
-
-  @impl true
-  def handle_call(:describe, _from, %{node_id: node_id} = state) do
-    Logger.info("Describe Message sent")
-    TcpConnection.send_message([:identifier, node_id], ~c"describe .\n")
-
-    receive do
-      {:describe, specifier, structure_report} ->
-        Logger.info("Description received")
-        equipment_id = Map.get(structure_report, "equipment_id")
-        updated_state = %{state | description: structure_report, equipment_id: equipment_id}
-        {:reply, {:description, specifier, structure_report}, updated_state}
-    after
-      5000 -> {:reply, :error, state}
+        # TODO Handle error reply
     end
   end
 
-  @impl true
-  def handle_call(:activate, _from, %{node_id: node_id} = state) do
-    Logger.info("Activate Message sent")
-    TcpConnection.send([:identifier, node_id], ~c"activate\n")
-
-    receive do
-      {:active} ->
-        Logger.info("Node Active")
+  def handle_event(:internal, :activate, :initialized, %{node_id: node_id} = state) do
+    case send_activate_message(node_id) do
+      {:ok, :active} ->
         updated_state = %{state | active: true}
-        {:reply, :active, updated_state}
-    after
-      5000 -> {:reply, :error, state}
+        {:keep_state, updated_state}
+
+      # TODO handle error_reply
+      {:error, :timeout} ->
+        {:keep_state_and_data, []}
     end
   end
 
-  @impl true
-  def handle_call(:deactivate, _from, %{node_id: node_id} = state) do
+  def handle_event(
+        {:call, from},
+        :describe,
+        :initialized,
+        %{node_id: node_id, description: description} = state
+      ) do
+    Logger.info("Describe Message sent")
+
+    case send_describe_message(node_id) do
+      {:ok, _specifier, structure_report} ->
+        equipment_id = Map.get(structure_report, "equipment_id")
+
+        case MapDiff.diff(structure_report, description) do
+          # Notihng changed, probably just a network disconnect
+          %{changed: :equal, value: _} ->
+            Logger.info("Descriptive data constant")
+            {:keep_state_and_data, {:reply, from, {:describing, structure_report}}}
+
+          # Description changed update uuid, equipment_id and description
+          _ ->
+            Logger.info("Descriptive data changed issuing new uuid")
+
+            updated_state_descr = %{
+              state
+              | description: structure_report,
+                uuid: UUID.uuid1(),
+                equipment_id: equipment_id
+            }
+
+            {:keep_state, updated_state_descr, {:reply, from, {:describing, structure_report}}}
+        end
+
+      {:error, :timeout} ->
+        Logger.warning(
+          "NO answer on describe message for #{elem(node_id, 0)}:#{elem(node_id, 1)}, going into ERROR state"
+        )
+
+        {:keep_state_and_data, {:reply, from, {:error, :timeout}}}
+
+        # TODO Handle error reply
+    end
+  end
+
+  def handle_event({:call, from}, :activate, :initialized, %{node_id: node_id} = state) do
+    Logger.info("Activate Message sent")
+
+    case send_activate_message(node_id) do
+      {:ok, :active} ->
+        updated_state = %{state | active: true}
+        {:keep_state, updated_state, {:reply, from, {:active}}}
+
+      # TODO handle error_reply
+      {:error, :timeout} ->
+        {:keep_state_and_data, {:reply, from, {:error, :timeout}}}
+    end
+  end
+
+  def handle_event({:call, from}, :deactivate, :initialized, %{node_id: node_id} = state) do
     Logger.info("Deactivate Message sent")
-    TcpConnection.send([:identifier, node_id], ~c"deactivate\n")
+    TcpConnection.send_message(node_id, ~c"deactivate\n")
 
     receive do
       {:inactive} ->
         Logger.info("Node Inactive")
         updated_state = %{state | active: false}
-        {:reply, :active, updated_state}
+        {:keep_state, updated_state, {:reply, from, {:inactive}}}
     after
-      5000 -> {:reply, :error, state}
+      5000 -> {:keep_state_and_data, {:reply, from, {:error, :timeout}}}
     end
   end
 
-  @impl true
-  def handle_call({:change, module, parameter, value}, _from, %{node_id: node_id} = state) do
+  def handle_event(
+        {:call, from},
+        {:change, module, parameter, value},
+        :initialized,
+        %{node_id: node_id} = _state
+      ) do
     message = "change #{module}:#{parameter} #{value}\n"
 
     Logger.info("Change Message '#{String.trim_trailing(message)}' sent")
 
-    TcpConnection.send([:identifier, node_id], String.to_charlist(message))
+    TcpConnection.send_message(node_id, String.to_charlist(message))
 
     receive do
       {:changed, r_module, r_parameter, data_report} ->
-        Logger.info("Value of #{module}:#{parameter} changed to #{Jason.encode!(data_report)}")
-        {:reply, {:changed, r_module, r_parameter, data_report}, state}
+        Logger.info("Value of #{r_module}:#{r_module} changed to #{Jason.encode!(data_report)}")
+        {:keep_state_and_data, {:reply, from, {:changed, r_module, r_parameter, data_report}}}
     after
-      5000 -> {:reply, :error, state}
+      5000 -> {:keep_state_and_data, {:reply, from, {:error, :timeout}}}
     end
   end
 
-  @impl true
-  def handle_call({:do, module, command, value}, _from, %{node_id: node_id} = state) do
+  def handle_event(
+        {:call, from},
+        {:do, module, command, value},
+        :initialized,
+        %{node_id: node_id} = _state
+      ) do
     message = "do #{module}:#{command} #{value}\n"
 
     Logger.info("Do Message '#{String.trim_trailing(message)}' sent")
-    TcpConnection.send([:identifier, node_id], String.to_charlist(message))
+    TcpConnection.send_message(node_id, String.to_charlist(message))
 
     receive do
       {:done, r_module, r_command, data_report} ->
@@ -202,55 +312,225 @@ defmodule SEC_Node_Statem do
           "Command #{module}:#{command} executed and returned: #{Jason.encode!(data_report)}"
         )
 
-        {:reply, {:done, r_module, r_command, data_report}, state}
+        {:keep_state_and_data, {:reply, from, {:changed, r_module, r_command, data_report}}}
     after
-      5000 -> {:reply, :error, state}
+      5000 -> {:keep_state_and_data, {:reply, from, {:error, :timeout}}}
     end
   end
 
-  ### TODO handle non sync messages gracefully (ie if they arrive after timeout)
-  @impl true
-  def handle_info({:active}, state) do
+  def handle_event(
+        {:call, from},
+        {:read, module, parameter, value},
+        :initialized,
+        %{node_id: node_id} = _state
+      ) do
+    message = "read #{module}:#{parameter} #{value}\n"
+
+    Logger.info("Read Message '#{String.trim_trailing(message)}' sent")
+    TcpConnection.send_message(node_id, String.to_charlist(message))
+
+    receive do
+      {:reply, r_module, r_parameter, data_report} ->
+        Logger.info(
+          "Read request #{module}:#{parameter} sent and returned: #{Jason.encode!(data_report)}"
+        )
+
+        {:keep_state_and_data, {:reply, from, {:reply, r_module, r_parameter, data_report}}}
+    after
+      5000 -> {:keep_state_and_data, {:reply, from, {:error, :timeout}}}
+    end
+  end
+
+  def handle_event({:call, from}, :ping, :initialized, %{node_id: node_id} = _state) do
+    # generate random id
+    id = Enum.random(1..100_000)
+
+    message = "ping #{id}\n"
+
+    Logger.info("Ping Message '#{String.trim_trailing(message)}' sent")
+    TcpConnection.send_message(node_id, String.to_charlist(message))
+
+    receive do
+      {:pong, id, data} ->
+        Logger.info("Corresponding Pong received: #{Jason.encode!(data)}")
+        {:keep_state_and_data, {:reply, from, {:pong, id, data}}}
+    after
+      5000 -> {:keep_state_and_data, {:reply, from, {:error, :timeout}}}
+    end
+  end
+
+  def handle_event(:info, {:active}, :initialized, state) do
     Logger.warning("received async ACTIVE message")
     updated_state = %{state | active: true}
-    {:noreply, updated_state}
+    {:keep_state, updated_state}
   end
 
-  @impl true
-  def handle_info({:inactive}, state) do
+  def handle_event(:info, {:inactive}, :initialized, state) do
     Logger.warning("received async INACTIVE message")
     updated_state = %{state | active: false}
-    {:noreply, updated_state}
+    {:keep_state, updated_state}
   end
 
-  @impl true
-  def handle_info({:pong, id, data}, state) do
+  def handle_event(:info, {:pong, id, data}, :initialized, _state) do
     Logger.warning("received async PONG message id:#{id}, data:#{data}")
-    {:noreply, state}
+    {:keep_state_and_data}
   end
 
-  @impl true
-  def handle_info({:describe, _specifier, structure_report}, state) do
+  def handle_event(
+        :info,
+        {:describe, _specifier, structure_report},
+        :initialized,
+        %{description: description} = state
+      ) do
     equipment_id = Map.get(structure_report, "equipment_id")
-    updated_state = %{state | description: structure_report, equipment_id: equipment_id}
-    {:noreply, updated_state}
+
+    case MapDiff.diff(structure_report, description) do
+      # Notihng changed, probably just a network disconnect
+      %{changed: :equal, value: _} ->
+        Logger.warning("received async Description: data constant")
+        {:keep_state_and_data}
+
+      # Description changed update uuid, equipment_id and description
+      _ ->
+        Logger.warning("received async Description: data changed issuing new uuid")
+
+        updated_state_descr = %{
+          state
+          | description: structure_report,
+            uuid: UUID.uuid1(),
+            equipment_id: equipment_id
+        }
+
+        {:keep_state, updated_state_descr}
+    end
   end
 
-  @impl true
-  def handle_info({:done, module, command, data_report}, state) do
+  def handle_event(:info, {:done, module, command, data_report}, :initialized, _state) do
     Logger.warning("received async DONE message #{module}:#{command} data: #{data_report}")
-    {:noreply, state}
+    {:keep_state_and_data}
   end
 
-  @impl true
-  def handle_info({:reply, module, parameter, data_report}, state) do
+  def handle_event(:info, {:reply, module, parameter, data_report}, :initialized, _state) do
     Logger.warning("received async REPLY message #{module}:#{parameter} data: #{data_report}")
-    {:noreply, state}
+    {:keep_state_and_data}
+  end
+
+  def handle_event(:info, {:changed, module, parameter, data_report}, :initialized, _state) do
+    Logger.warning("received async CHANGED message #{module}:#{parameter} data: #{data_report}")
+    {:keep_state_and_data}
+  end
+
+  defp send_describe_message(node_id) do
+    TcpConnection.send_message(node_id, ~c"describe .\n")
+
+    receive do
+      {:describe, specifier, structure_report} ->
+        Logger.info("Description received")
+        {:ok, specifier, structure_report}
+        # TODO ERROR reply
+    after
+      15000 -> {:error, :timeout}
+    end
+  end
+
+  defp send_activate_message(node_id) do
+    TcpConnection.send_message(node_id, ~c"activate\n")
+
+    receive do
+      {:active} ->
+        Logger.info("Node Activated")
+        {:ok, :active}
+
+        # TODO ERROR reply
+    after
+      15000 -> {:error, :timeout}
+    end
+  end
+end
+
+
+defmodule SEC_Node_Supervisor do
+  # Automatically defines child_spec/1
+  alias Jason
+  use DynamicSupervisor
+  @reconnect_backoff 5000
+
+  def start_link(init_arg) do
+    DynamicSupervisor.start_link(__MODULE__, init_arg, name: __MODULE__)
   end
 
   @impl true
-  def handle_info({:changed, module, parameter, data_report}, state) do
-    Logger.warning("received async CHANGED message #{module}:#{parameter} data: #{data_report}")
-    {:noreply, state}
+  def init(_init_arg) do
+    DynamicSupervisor.init(strategy: :one_for_one)
+  end
+
+  def start_child(opts) do
+    DynamicSupervisor.start_child(__MODULE__, {SEC_Node_Statem, opts})
+  end
+
+  def start_child_from_discovery(ip, _port, discovery_message) do
+    discover_map = Jason.decode!(discovery_message)
+
+    chl_ip = ip |> Tuple.to_list() |> Enum.join(".") |> String.to_charlist()
+
+
+    node_port = Map.get(discover_map, "port")
+
+    opts = %{
+      host: chl_ip,
+      port: node_port,
+      reconnect_backoff: @reconnect_backoff
+    }
+    case Registry.lookup(Registry.SEC_Node_Statem, {chl_ip,node_port}) do
+      [] -> DynamicSupervisor.start_child(__MODULE__, {SEC_Node_Statem, opts})
+      _  -> {:ok, :node_already_running}
+    end
+
+  end
+
+end
+
+
+defmodule NodeTable do
+  require Logger
+
+  @lookup_table :node_table_lookup
+
+  def start(node_id) do
+    case :ets.whereis(:node_table_lookup) do
+      :undefined -> :ets.new(@lookup_table, [:set, :public, :named_table])
+      _ -> {:ok}
+    end
+
+    # Create an ETS table with the table name as an atom
+    table = :ets.new(:ets_table, [:set, :public])
+
+    true = :ets.insert(@lookup_table, {node_id, table})
+
+    {:ok, table}
+  end
+
+  def insert(node_id, key, value) do
+    {:ok, table} = get_table(node_id)
+
+    true = :ets.insert(table, {key, value})
+
+    {:ok, :inserted}
+  end
+
+  def lookup(node_id, key) do
+    {:ok, table} = get_table(node_id)
+
+    case :ets.lookup(table, key) do
+      [{_, value}] -> {:ok, value}
+      [] -> {:error, :notfound}
+    end
+  end
+
+  defp get_table(node_id) do
+    case :ets.lookup(@lookup_table, node_id) do
+      [{_, table}] -> {:ok, table}
+      [] -> {:error, :notfound}
+    end
   end
 end
