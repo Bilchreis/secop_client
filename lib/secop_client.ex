@@ -47,8 +47,8 @@ defmodule SecopClient do
     #Process.sleep(1000)
 
     #SEC_Node_Statem.change(node_id, "massflow_contr1", "target", 20)
-    Process.sleep(:infinity)
 
-    {:ok, self()}
+
+    #{:ok, self()}
   end
 end
