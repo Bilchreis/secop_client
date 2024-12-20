@@ -26,4 +26,16 @@ defmodule SecopClient do
 
     Supervisor.start_link(children, opts)
   end
+
+  def get_active_nodes do
+    Supervisor.which_children(SEC_Node_Supervisor) |>
+    Enum.reduce(%{}, fn {_id, pid, _type, _module}, acc ->
+      case SEC_Node_Statem.get_state(pid) do
+        {:ok, state} ->
+          Map.put(acc, pid, state)
+        _ ->
+          acc
+      end
+    end)
+  end
 end

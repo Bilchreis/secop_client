@@ -34,6 +34,12 @@ defmodule SEC_Node_Statem do
   @impl :gen_statem
   def callback_mode, do: :handle_event_function
 
+
+  def get_state(node_id) do
+    [{sec_node_pid, _value}] = Registry.lookup(Registry.SEC_Node_Statem, node_id)
+    :gen_statem.call(sec_node_pid, :get_state)
+  end
+
   def describe(node_id) do
     [{sec_node_pid, _value}] = Registry.lookup(Registry.SEC_Node_Statem, node_id)
     :gen_statem.call(sec_node_pid, :describe)
@@ -218,6 +224,13 @@ defmodule SEC_Node_Statem do
         {:keep_state_and_data, []}
     end
   end
+
+
+  def handle_event({:call, from}, :get_state, state_name, state) when state_name in [:initialized, :connected, :disconnected] do
+    {:keep_state_and_data, {:reply, from, {:ok, state}}}
+  end
+
+
 
   def handle_event(
         {:call, from},
