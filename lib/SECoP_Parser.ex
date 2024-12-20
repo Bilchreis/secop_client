@@ -48,12 +48,12 @@ defmodule SECoP_Parser do
   end
 
   def update(node_id, specifier, data) do
-    Logger.debug("Update message received. Specifier: #{specifier}, Data: #{data}")
+    # Logger.debug("Update message received. Specifier: #{specifier}, Data: #{data}")
     data_to_ets(node_id, specifier, data)
   end
 
   def describe(node_id, specifier, data) do
-    Logger.debug("Describe message received. Specifier: #{specifier}, Data: #{data}")
+    # Logger.debug("Describe message received. Specifier: #{specifier}, Data: #{data}")
     {:ok, description} = Jason.decode(data)
 
     {:ok, :inserted} = NodeTable.insert(node_id, :description, description)
@@ -126,5 +126,27 @@ defmodule SECoP_Parser do
         send(pid, {:done, module, command, data_report})
       end
     end)
+  end
+
+  def get_empty_values_map(description) do
+    modules = description["modules"]
+
+    empty_values_map =
+      Enum.reduce(modules, %{}, fn {module_name, module_data}, acc ->
+        accessibles = module_data["accessibles"]
+
+        parameters =
+          Enum.reduce(accessibles, %{}, fn {param_name, param_data}, param_acc ->
+            if param_data["datainfo"]["type"] != "command" do
+              Map.put(param_acc, param_name, nil)
+            else
+              param_acc
+            end
+          end)
+
+        Map.put(acc, module_name, parameters)
+      end)
+
+    {:ok, empty_values_map}
   end
 end

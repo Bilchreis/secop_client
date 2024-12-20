@@ -3,6 +3,7 @@ defmodule SEC_Node_Statem do
   alias NodeTable
   alias UUID
   alias TcpConnection
+  alias SecNodePublisherSupervisor
 
   @behaviour :gen_statem
 
@@ -169,6 +170,21 @@ defmodule SEC_Node_Statem do
           # Description changed update uuid, equipment_id and description
           _ ->
             Logger.info("Descriptive data changed issuing new uuid --> connected & initialized")
+
+            {:ok, empty_values_map} = SECoP_Parser.get_empty_values_map(structure_report)
+
+
+            case Registry.lookup(Registry.SecNodePublisher, state.node_id) do
+              [] ->
+                SecNodePublisherSupervisor.start_child(
+                  host: state.host,
+                  port: state.port,
+                  values_map: empty_values_map
+                )
+
+              [{publisher_pid, _value}] ->
+                SecNodePublisher.set_values_map(publisher_pid, empty_values_map)
+            end
 
             updated_state_descr = %{
               state
@@ -448,7 +464,6 @@ defmodule SEC_Node_Statem do
   end
 end
 
-
 defmodule SEC_Node_Supervisor do
   # Automatically defines child_spec/1
   alias Jason
@@ -473,7 +488,6 @@ defmodule SEC_Node_Supervisor do
 
     chl_ip = ip |> Tuple.to_list() |> Enum.join(".") |> String.to_charlist()
 
-
     node_port = Map.get(discover_map, "port")
 
     opts = %{
@@ -481,15 +495,13 @@ defmodule SEC_Node_Supervisor do
       port: node_port,
       reconnect_backoff: @reconnect_backoff
     }
-    case Registry.lookup(Registry.SEC_Node_Statem, {chl_ip,node_port}) do
+
+    case Registry.lookup(Registry.SEC_Node_Statem, {chl_ip, node_port}) do
       [] -> DynamicSupervisor.start_child(__MODULE__, {SEC_Node_Statem, opts})
-      _  -> {:ok, :node_already_running}
+      _ -> {:ok, :node_already_running}
     end
-
   end
-
 end
-
 
 defmodule NodeTable do
   require Logger

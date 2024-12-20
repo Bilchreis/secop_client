@@ -10,18 +10,20 @@ defmodule SecopClient do
 
   def start(_type, _args) do
     children = [
+      {Phoenix.PubSub, name: :secop_parameter_pubsub},
       {Registry, keys: :unique, name: Registry.Buffer},
       {Registry, keys: :unique, name: Registry.TcpConnection},
       {Registry, keys: :unique, name: Registry.SEC_Node_Statem},
-      {SEC_Node_Supervisor,[]},
+      {Registry, keys: :unique, name: Registry.SecNodePublisher},
+      {SEC_Node_Supervisor, []},
       {TcpConnectionSupervisor, []},
       {BufferSupervisor, []},
+      {SecNodePublisherSupervisor, []},
       {NodeDiscover, &SEC_Node_Supervisor.start_child_from_discovery/3}
     ]
 
     opts = [strategy: :one_for_one, name: SecopClient.Supervisor]
 
     Supervisor.start_link(children, opts)
-
   end
 end
