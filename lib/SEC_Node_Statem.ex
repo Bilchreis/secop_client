@@ -23,7 +23,7 @@ defmodule SEC_Node_Statem do
 
   def child_spec(opts) do
     %{
-      id: __MODULE__,
+      id: {opts[:host], opts[:port]},
       start: {__MODULE__, :start_link, [opts]},
       type: :worker,
       restart: :permanent,
@@ -35,9 +35,8 @@ defmodule SEC_Node_Statem do
   def callback_mode, do: :handle_event_function
 
 
-  def get_state(node_id) do
-    [{sec_node_pid, _value}] = Registry.lookup(Registry.SEC_Node_Statem, node_id)
-    :gen_statem.call(sec_node_pid, :get_state)
+  def get_state(pid) do
+    :gen_statem.call(pid, :get_state)
   end
 
   def describe(node_id) do
