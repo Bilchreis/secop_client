@@ -32,7 +32,10 @@ defmodule SecopClient do
     Enum.reduce(%{}, fn {_id, pid, _type, _module}, acc ->
       case SEC_Node_Statem.get_state(pid) do
         {:ok, state} ->
-          Map.put(acc, pid, state)
+          node_id = state.node_id
+
+          Map.put(acc, node_id, state)
+
         _ ->
           acc
       end

@@ -86,6 +86,7 @@ defmodule SEC_Node_Statem do
       host: opts[:host],
       port: opts[:port],
       node_id: {opts[:host], opts[:port]},
+      pubsub_topic: "#{opts[:host]}:#{opts[:port]}",
       equipment_id: nil,
       reconnect_backoff: opts[:reconnect_backoff] || 5000,
       description: nil,
