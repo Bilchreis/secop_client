@@ -54,7 +54,7 @@ defmodule SECoP_Parser do
 
   def describe(node_id, specifier, data) do
     # Logger.debug("Describe message received. Specifier: #{specifier}, Data: #{data}")
-    {:ok, description} = Jason.decode(data)
+    {:ok, description} = Jason.decode(data,[keys: :atoms])
 
     {:ok, :inserted} = NodeTable.insert(node_id, :description, description)
 
