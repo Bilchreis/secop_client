@@ -129,15 +129,15 @@ defmodule SECoP_Parser do
   end
 
   def get_empty_values_map(description) do
-    modules = description["modules"]
+    modules = description[:modules]
 
     empty_values_map =
       Enum.reduce(modules, %{}, fn {module_name, module_data}, acc ->
-        accessibles = module_data["accessibles"]
+        accessibles = module_data[:accessibles]
 
         parameters =
           Enum.reduce(accessibles, %{}, fn {param_name, param_data}, param_acc ->
-            if param_data["datainfo"]["type"] != "command" do
+            if param_data[:datainfo][:type] != "command" do
               Map.put(param_acc, param_name, nil)
             else
               param_acc
