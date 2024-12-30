@@ -56,11 +56,15 @@ defmodule SECoP_Parser do
     # Logger.debug("Describe message received. Specifier: #{specifier}, Data: #{data}")
     {:ok, description} = Jason.decode(data,[keys: :atoms])
 
-    {:ok, :inserted} = NodeTable.insert(node_id, :description, description)
+    parsed_description = parse__node_description(description)
+
+
+    {:ok, :inserted} = NodeTable.insert(node_id, :description, parsed_description)
+    {:ok, :inserted} = NodeTable.insert(node_id, :raw_description, description)
 
     Registry.dispatch(Registry.SEC_Node_Statem, node_id, fn entries ->
       for {pid, _value} <- entries do
-        send(pid, {:describe, specifier, description})
+        send(pid, {:describe, specifier, parsed_description})
       end
     end)
   end
@@ -133,20 +137,58 @@ defmodule SECoP_Parser do
 
     empty_values_map =
       Enum.reduce(modules, %{}, fn {module_name, module_data}, acc ->
-        accessibles = module_data[:accessibles]
-
-        parameters =
-          Enum.reduce(accessibles, %{}, fn {param_name, param_data}, param_acc ->
-            if param_data[:datainfo][:type] != "command" do
-              Map.put(param_acc, param_name, nil)
-            else
-              param_acc
-            end
-          end)
+        parameters = module_data[:parameters]
 
         Map.put(acc, module_name, parameters)
       end)
 
+
     {:ok, empty_values_map}
   end
+
+
+
+  def parse__node_description(description) do
+    node_descripttion = %{
+      properties: Map.drop(description, [:modules])
+    }
+
+    # add all run parse_module_description for each module in desctription[:modules] and put result in a map
+    modules = Enum.reduce(description[:modules], %{}, fn {module_name, module_description}, acc ->
+      parsed_module_description = parse_module_description(module_description)
+      Map.put(acc, module_name, parsed_module_description)
+    end)
+
+    node_descripttion = Map.put(node_descripttion,:modules,modules)
+
+
+    node_descripttion
+  end
+
+  def parse_module_description(module_description) do
+    {parameters, commands} =
+      Enum.reduce(module_description[:accessibles], {%{}, %{}}, fn {param_name, param_data}, {param_acc, cmd_acc} ->
+        if param_data[:datainfo][:type] != "command" do
+          {Map.put(param_acc, param_name, nil), cmd_acc}
+        else
+          {param_acc, Map.put(cmd_acc, param_name, param_data)}
+        end
+      end)
+
+
+    parsed_module_description = %{
+      properties: Map.drop(module_description, [:accessibles]),
+      parameters: parameters,
+      commands: commands
+    }
+
+
+
+
+    parsed_module_description
+  end
+
+
+
+
 end

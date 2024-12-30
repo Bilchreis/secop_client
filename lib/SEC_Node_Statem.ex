@@ -164,10 +164,10 @@ defmodule SEC_Node_Statem do
     Logger.info("Initial Describe Message sent")
 
     case send_describe_message(node_id) do
-      {:ok, _specifier, structure_report} ->
-        equipment_id = Map.get(structure_report, :equipment_id)
+      {:ok, _specifier, parsed_description} ->
+        equipment_id = parsed_description[:node_properties][:equipment_id]
 
-        case MapDiff.diff(structure_report, description) do
+        case MapDiff.diff(parsed_description, description) do
           # Notihng changed, probably just a network disconnect
           %{changed: :equal, value: _} ->
             Logger.info("Descriptive data constant --> connected & initialized")
@@ -177,7 +177,7 @@ defmodule SEC_Node_Statem do
           _ ->
             Logger.info("Descriptive data changed issuing new uuid --> connected & initialized")
 
-            {:ok, empty_values_map} = SECoP_Parser.get_empty_values_map(structure_report)
+            {:ok, empty_values_map} = SECoP_Parser.get_empty_values_map(parsed_description)
 
 
             case Registry.lookup(Registry.SecNodePublisher, state.node_id) do
@@ -194,7 +194,7 @@ defmodule SEC_Node_Statem do
 
             updated_state_descr = %{
               state
-              | description: structure_report,
+              | description: parsed_description,
                 uuid: UUID.uuid1(),
                 equipment_id: equipment_id
             }
@@ -241,14 +241,14 @@ defmodule SEC_Node_Statem do
     Logger.info("Describe Message sent")
 
     case send_describe_message(node_id) do
-      {:ok, _specifier, structure_report} ->
-        equipment_id = Map.get(structure_report, "equipment_id")
+      {:ok, _specifier, parsed_description} ->
+        equipment_id = parsed_description[:node_properties][:equipment_id]
 
-        case MapDiff.diff(structure_report, description) do
+        case MapDiff.diff(parsed_description, description) do
           # Notihng changed, probably just a network disconnect
           %{changed: :equal, value: _} ->
             Logger.info("Descriptive data constant")
-            {:keep_state_and_data, {:reply, from, {:describing, structure_report}}}
+            {:keep_state_and_data, {:reply, from, {:describing, parsed_description}}}
 
           # Description changed update uuid, equipment_id and description
           _ ->
@@ -256,12 +256,12 @@ defmodule SEC_Node_Statem do
 
             updated_state_descr = %{
               state
-              | description: structure_report,
+              | description: parsed_description,
                 uuid: UUID.uuid1(),
                 equipment_id: equipment_id
             }
 
-            {:keep_state, updated_state_descr, {:reply, from, {:describing, structure_report}}}
+            {:keep_state, updated_state_descr, {:reply, from, {:describing, parsed_description}}}
         end
 
       {:error, :timeout} ->
@@ -407,13 +407,13 @@ defmodule SEC_Node_Statem do
 
   def handle_event(
         :info,
-        {:describe, _specifier, structure_report},
+        {:describe, _specifier, parsed_description},
         :initialized,
         %{description: description} = state
       ) do
-    equipment_id = Map.get(structure_report, "equipment_id")
+    equipment_id = parsed_description[:node_properties][:equipment_id]
 
-    case MapDiff.diff(structure_report, description) do
+    case MapDiff.diff(parsed_description, description) do
       # Notihng changed, probably just a network disconnect
       %{changed: :equal, value: _} ->
         Logger.warning("received async Description: data constant")
@@ -425,7 +425,7 @@ defmodule SEC_Node_Statem do
 
         updated_state_descr = %{
           state
-          | description: structure_report,
+          | description: parsed_description,
             uuid: UUID.uuid1(),
             equipment_id: equipment_id
         }
@@ -453,9 +453,9 @@ defmodule SEC_Node_Statem do
     TcpConnection.send_message(node_id, ~c"describe .\n")
 
     receive do
-      {:describe, specifier, structure_report} ->
+      {:describe, specifier, parsed_description} ->
         Logger.info("Description received")
-        {:ok, specifier, structure_report}
+        {:ok, specifier, parsed_description}
         # TODO ERROR reply
     after
       15000 -> {:error, :timeout}
