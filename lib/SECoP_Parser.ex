@@ -167,11 +167,11 @@ defmodule SECoP_Parser do
 
   def parse_module_description(module_description) do
     {parameters, commands} =
-      Enum.reduce(module_description[:accessibles], {%{}, %{}}, fn {param_name, param_data}, {param_acc, cmd_acc} ->
-        if param_data[:datainfo][:type] != "command" do
-          {Map.put(param_acc, param_name, nil), cmd_acc}
+      Enum.reduce(module_description[:accessibles], {%{}, %{}}, fn {accessible_name, accessible_data}, {param_acc, cmd_acc} ->
+        if accessible_data[:datainfo][:type] != "command" do
+          {Map.put(param_acc, accessible_name, accessible_data), cmd_acc}
         else
-          {param_acc, Map.put(cmd_acc, param_name, param_data)}
+          {param_acc, Map.put(cmd_acc, accessible_name, accessible_data)}
         end
       end)
 
