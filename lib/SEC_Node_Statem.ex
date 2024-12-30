@@ -165,7 +165,7 @@ defmodule SEC_Node_Statem do
 
     case send_describe_message(node_id) do
       {:ok, _specifier, parsed_description} ->
-        equipment_id = parsed_description[:node_properties][:equipment_id]
+        equipment_id = parsed_description[:properties][:equipment_id]
 
         case MapDiff.diff(parsed_description, description) do
           # Notihng changed, probably just a network disconnect
@@ -242,7 +242,7 @@ defmodule SEC_Node_Statem do
 
     case send_describe_message(node_id) do
       {:ok, _specifier, parsed_description} ->
-        equipment_id = parsed_description[:node_properties][:equipment_id]
+        equipment_id = parsed_description[:properties][:equipment_id]
 
         case MapDiff.diff(parsed_description, description) do
           # Notihng changed, probably just a network disconnect
@@ -411,7 +411,7 @@ defmodule SEC_Node_Statem do
         :initialized,
         %{description: description} = state
       ) do
-    equipment_id = parsed_description[:node_properties][:equipment_id]
+    equipment_id = parsed_description[:properties][:equipment_id]
 
     case MapDiff.diff(parsed_description, description) do
       # Notihng changed, probably just a network disconnect
