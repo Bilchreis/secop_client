@@ -165,7 +165,7 @@ defmodule SEC_Node_Statem do
 
     case send_describe_message(node_id) do
       {:ok, _specifier, structure_report} ->
-        equipment_id = Map.get(structure_report, "equipment_id")
+        equipment_id = Map.get(structure_report, :equipment_id)
 
         case MapDiff.diff(structure_report, description) do
           # Notihng changed, probably just a network disconnect
