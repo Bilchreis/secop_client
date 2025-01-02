@@ -104,7 +104,7 @@ defmodule SecNodePublisher do
     Phoenix.PubSub.broadcast(
       :secop_parameter_pubsub,
       state.pubsub_topic,
-      new_values_map
+      {:values_map,state.pubsub_topic,new_values_map}
     )
 
     new_state
