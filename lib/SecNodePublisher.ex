@@ -78,8 +78,7 @@ defmodule SecNodePublisher do
   end
 
   defp collect(state) do
-    IO.inspect(state.values_map)
-    new_values_map =
+      new_values_map =
       Enum.reduce(state.values_map, %{}, fn {module, parameters}, acc ->
         # acc is the accumulator for the outer Enum.reduce, which accumulates the updated map
         updated_parameters =
