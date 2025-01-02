@@ -43,7 +43,6 @@ defmodule SecNodePublisher do
 
     Logger.info("Started publisher for #{state.pubsub_topic}")
 
-
     schedule_collection()
 
     {:ok, state}
@@ -57,7 +56,6 @@ defmodule SecNodePublisher do
   @impl true
   def handle_info(:work, state) do
     Logger.debug("Sheduled parameter value collection for #{state.pubsub_topic}")
-
 
     new_state =
       if map_size(state.values_map) == 0 do
@@ -80,7 +78,7 @@ defmodule SecNodePublisher do
   end
 
   defp collect(state) do
-
+    IO.inspect(state.values_map)
     new_values_map =
       Enum.reduce(state.values_map, %{}, fn {module, parameters}, acc ->
         # acc is the accumulator for the outer Enum.reduce, which accumulates the updated map
@@ -100,11 +98,10 @@ defmodule SecNodePublisher do
       end)
 
     new_state = %{state | values_map: new_values_map}
-
     Phoenix.PubSub.broadcast(
       :secop_parameter_pubsub,
       state.pubsub_topic,
-      {:values_map,state.pubsub_topic,new_values_map}
+      {:values_map, state.pubsub_topic, new_values_map}
     )
 
     new_state

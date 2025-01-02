@@ -42,22 +42,26 @@ defmodule SECoP_Parser do
 
     {:ok, module, accessible} = splitSpecifier(specifier)
 
-    {:ok, :inserted} = NodeTable.insert(node_id, {:data_report, module, accessible}, data_report)
+    {:ok, :inserted} =
+      NodeTable.insert(
+        node_id,
+        {:data_report, String.to_existing_atom(module), String.to_existing_atom(accessible)},
+        data_report
+      )
 
     {:ok, module, accessible, data_report}
   end
 
   def update(node_id, specifier, data) do
-    # Logger.debug("Update message received. Specifier: #{specifier}, Data: #{data}")
+    Logger.debug("Update message received. Specifier: #{specifier}, Data: #{data}")
     data_to_ets(node_id, specifier, data)
   end
 
   def describe(node_id, specifier, data) do
     # Logger.debug("Describe message received. Specifier: #{specifier}, Data: #{data}")
-    {:ok, description} = Jason.decode(data,[keys: :atoms])
+    {:ok, description} = Jason.decode(data, keys: :atoms)
 
     parsed_description = parse__node_description(description)
-
 
     {:ok, :inserted} = NodeTable.insert(node_id, :description, parsed_description)
     {:ok, :inserted} = NodeTable.insert(node_id, :raw_description, description)
@@ -132,21 +136,23 @@ defmodule SECoP_Parser do
     end)
   end
 
-  def get_empty_values_map(description) do
-    modules = description[:modules]
+  def get_empty_values_map(parsed_description) do
+    modules = parsed_description[:modules]
 
     empty_values_map =
       Enum.reduce(modules, %{}, fn {module_name, module_data}, acc ->
-        parameters = module_data[:parameters]
+        parameteter_map = module_data[:parameters]
+
+        parameters =
+          Enum.reduce(parameteter_map, %{}, fn {param_name, _param_data}, param_acc ->
+            Map.put(param_acc, param_name, nil)
+          end)
 
         Map.put(acc, module_name, parameters)
       end)
 
-
     {:ok, empty_values_map}
   end
-
-
 
   def parse__node_description(description) do
     node_descripttion = %{
@@ -154,20 +160,22 @@ defmodule SECoP_Parser do
     }
 
     # add all run parse_module_description for each module in desctription[:modules] and put result in a map
-    modules = Enum.reduce(description[:modules], %{}, fn {module_name, module_description}, acc ->
-      parsed_module_description = parse_module_description(module_description)
-      Map.put(acc, module_name, parsed_module_description)
-    end)
+    modules =
+      Enum.reduce(description[:modules], %{}, fn {module_name, module_description}, acc ->
+        parsed_module_description = parse_module_description(module_description)
+        Map.put(acc, module_name, parsed_module_description)
+      end)
 
-    node_descripttion = Map.put(node_descripttion,:modules,modules)
-
+    node_descripttion = Map.put(node_descripttion, :modules, modules)
 
     node_descripttion
   end
 
   def parse_module_description(module_description) do
     {parameters, commands} =
-      Enum.reduce(module_description[:accessibles], {%{}, %{}}, fn {accessible_name, accessible_data}, {param_acc, cmd_acc} ->
+      Enum.reduce(module_description[:accessibles], {%{}, %{}}, fn {accessible_name,
+                                                                    accessible_data},
+                                                                   {param_acc, cmd_acc} ->
         if accessible_data[:datainfo][:type] != "command" do
           accessible_data = Map.put(accessible_data, :value, nil)
           {Map.put(param_acc, accessible_name, accessible_data), cmd_acc}
@@ -176,20 +184,12 @@ defmodule SECoP_Parser do
         end
       end)
 
-
     parsed_module_description = %{
       properties: Map.drop(module_description, [:accessibles]),
       parameters: parameters,
       commands: commands
     }
 
-
-
-
     parsed_module_description
   end
-
-
-
-
 end

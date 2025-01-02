@@ -34,7 +34,6 @@ defmodule SEC_Node_Statem do
   @impl :gen_statem
   def callback_mode, do: :handle_event_function
 
-
   def get_state(pid) do
     :gen_statem.call(pid, :get_state)
   end
@@ -179,7 +178,6 @@ defmodule SEC_Node_Statem do
 
             {:ok, empty_values_map} = SECoP_Parser.get_empty_values_map(parsed_description)
 
-
             case Registry.lookup(Registry.SecNodePublisher, state.node_id) do
               [] ->
                 SecNodePublisherSupervisor.start_child(
@@ -225,12 +223,10 @@ defmodule SEC_Node_Statem do
     end
   end
 
-
-  def handle_event({:call, from}, :get_state, state_name, state) when state_name in [:initialized, :connected, :disconnected] do
+  def handle_event({:call, from}, :get_state, state_name, state)
+      when state_name in [:initialized, :connected, :disconnected] do
     {:keep_state_and_data, {:reply, from, {:ok, state}}}
   end
-
-
 
   def handle_event(
         {:call, from},

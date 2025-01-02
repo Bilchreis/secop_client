@@ -28,8 +28,8 @@ defmodule SecopClient do
   end
 
   def get_active_nodes() do
-    Supervisor.which_children(SEC_Node_Supervisor) |>
-    Enum.reduce(%{}, fn {_id, pid, _type, _module}, acc ->
+    Supervisor.which_children(SEC_Node_Supervisor)
+    |> Enum.reduce(%{}, fn {_id, pid, _type, _module}, acc ->
       case SEC_Node_Statem.get_state(pid) do
         {:ok, state} ->
           node_id = state.node_id

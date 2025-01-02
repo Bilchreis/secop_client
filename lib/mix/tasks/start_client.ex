@@ -7,10 +7,9 @@ defmodule Mix.Tasks.StartClient do
   def run(_args) do
     Mix.Task.run("app.start")
 
-
     Process.sleep(1000)
 
-    IO.inspect(SecopClient.get_active_nodes())
+    # IO.inspect(SecopClient.get_active_nodes())
 
     # Keep the application running indefinitely
     :timer.sleep(:infinity)
