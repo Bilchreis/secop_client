@@ -496,7 +496,7 @@ defmodule SEC_Node_Statem do
   defp publish_secop_conn_state(active, pubsub_topic) do
     Phoenix.PubSub.broadcast(
       :secop_client_pubsub,
-      "descriptive_data_change",
+      "secop_conn_state",
       {:conn_state, pubsub_topic, active}
     )
   end
@@ -512,7 +512,7 @@ defmodule SEC_Node_Statem do
   defp publish_new_node(state, pubsub_topic) do
     Phoenix.PubSub.broadcast(
           :secop_client_pubsub,
-          "state_change",
+          "new_node",
           {:state_change,pubsub_topic, state}
         )
   end
