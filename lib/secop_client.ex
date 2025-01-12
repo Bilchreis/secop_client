@@ -10,7 +10,7 @@ defmodule SecopClient do
 
   def start(_type, _args) do
     children = [
-      {Phoenix.PubSub, name: :secop_parameter_pubsub},
+      {Phoenix.PubSub, name: :secop_client_pubsub},
       {Registry, keys: :unique, name: Registry.Buffer},
       {Registry, keys: :unique, name: Registry.TcpConnection},
       {Registry, keys: :unique, name: Registry.SEC_Node_Statem},
@@ -27,18 +27,5 @@ defmodule SecopClient do
     Supervisor.start_link(children, opts)
   end
 
-  def get_active_nodes() do
-    Supervisor.which_children(SEC_Node_Supervisor)
-    |> Enum.reduce(%{}, fn {_id, pid, _type, _module}, acc ->
-      case SEC_Node_Statem.get_state(pid) do
-        {:ok, state} ->
-          node_id = state.node_id
 
-          Map.put(acc, node_id, state)
-
-        _ ->
-          acc
-      end
-    end)
-  end
 end

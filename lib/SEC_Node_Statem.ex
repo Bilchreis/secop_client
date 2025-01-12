@@ -91,7 +91,8 @@ defmodule SEC_Node_Statem do
       description: nil,
       active: false,
       uuid: UUID.uuid1(),
-      error: false
+      error: false,
+      state: :disconnected
     }
 
     Logger.info("opening connection")
@@ -99,13 +100,17 @@ defmodule SEC_Node_Statem do
 
     NodeTable.start(state.node_id)
 
+    publish_new_node(state, state.pubsub_topic)
+
     {:ok, @initial_state, state, {:next_event, :internal, :connect}}
   end
 
   @impl :gen_statem
   def handle_event(:internal, :connect, :disconnected, %{node_id: node_id} = state) do
     case TcpConnection.is_connected(node_id) do
-      true -> {:next_state, :connected, state, {:next_event, :internal, :handshake}}
+      true  ->
+        publish_statechange(:connected, state.pubsub_topic)
+        {:next_state, :connected, %{ state | state: :connected} , {:next_event, :internal, :handshake}}
       false -> {:keep_state, state, {{:timeout, :reconnect}, 5000, nil}}
     end
   end
@@ -127,11 +132,13 @@ defmodule SEC_Node_Statem do
 
   def handle_event(:info, :socket_disconnected, machine_state, state)
       when machine_state in [:connected, :initialized] do
-    {:next_state, :disconnected, state, {:next_event, :internal, :connect}}
+    publish_statechange(:disconnected, state.pubsub_topic)
+    {:next_state, :disconnected, %{state | state: :disconnected}, {:next_event, :internal, :connect}}
   end
 
   def handle_event(:info, :socket_connected, :disconnected, state) do
-    {:next_state, :connected, state, {:next_event, :internal, :handshake}}
+    publish_statechange(:connected, state.pubsub_topic)
+    {:next_state, :connected, %{ state | state: :connected}, {:next_event, :internal, :handshake}}
   end
 
   def handle_event(:info, :socket_connected, :connected, _state) do
@@ -167,10 +174,11 @@ defmodule SEC_Node_Statem do
         equipment_id = parsed_description[:properties][:equipment_id]
 
         case MapDiff.diff(parsed_description, description) do
-          # Notihng changed, probably just a network disconnect
+          # Notihng changed, probably just a prior network disconnect
           %{changed: :equal, value: _} ->
             Logger.info("Descriptive data constant --> connected & initialized")
-            {:next_state, :initialized, state, {:next_event, :internal, :activate}}
+            publish_statechange(:initialized, state.pubsub_topic)
+            {:next_state, :initialized, %{state | state: :initialized}, {:next_event, :internal, :activate}}
 
           # Description changed update uuid, equipment_id and description
           _ ->
@@ -194,9 +202,11 @@ defmodule SEC_Node_Statem do
               state
               | description: parsed_description,
                 uuid: UUID.uuid1(),
-                equipment_id: equipment_id
+                equipment_id: equipment_id,
+                state: :initialized
             }
-
+            publish_descriptive_data_change(updated_state_descr, state.pubsub_topic)
+            publish_statechange(:initialized, state.pubsub_topic)
             {:next_state, :initialized, updated_state_descr, {:next_event, :internal, :activate}}
         end
 
@@ -204,8 +214,8 @@ defmodule SEC_Node_Statem do
         Logger.warning(
           "NO answer on describe message for #{elem(node_id, 0)}:#{elem(node_id, 1)}, going into ERROR state"
         )
-
-        {:next_state, :could_not_initialize, state}
+        publish_statechange(:could_not_initialize, state.pubsub_topic)
+        {:next_state, :could_not_initialize, %{state | state: :could_not_initialize}}
 
         # TODO Handle error reply
     end
@@ -214,6 +224,7 @@ defmodule SEC_Node_Statem do
   def handle_event(:internal, :activate, :initialized, %{node_id: node_id} = state) do
     case send_activate_message(node_id) do
       {:ok, :active} ->
+        publish_secop_conn_state(true, state.pubsub_topic)
         updated_state = %{state | active: true}
         {:keep_state, updated_state}
 
@@ -256,7 +267,7 @@ defmodule SEC_Node_Statem do
                 uuid: UUID.uuid1(),
                 equipment_id: equipment_id
             }
-
+            publish_descriptive_data_change(updated_state_descr, state.pubsub_topic)
             {:keep_state, updated_state_descr, {:reply, from, {:describing, parsed_description}}}
         end
 
@@ -277,6 +288,7 @@ defmodule SEC_Node_Statem do
     case send_activate_message(node_id) do
       {:ok, :active} ->
         updated_state = %{state | active: true}
+        publish_secop_conn_state(true, state.pubsub_topic)
         {:keep_state, updated_state, {:reply, from, {:active}}}
 
       # TODO handle error_reply
@@ -293,6 +305,7 @@ defmodule SEC_Node_Statem do
       {:inactive} ->
         Logger.info("Node Inactive")
         updated_state = %{state | active: false}
+        publish_secop_conn_state(false, state.pubsub_topic)
         {:keep_state, updated_state, {:reply, from, {:inactive}}}
     after
       5000 -> {:keep_state_and_data, {:reply, from, {:error, :timeout}}}
@@ -471,6 +484,39 @@ defmodule SEC_Node_Statem do
       15000 -> {:error, :timeout}
     end
   end
+
+  defp publish_descriptive_data_change(state, pubsub_topic) do
+    Phoenix.PubSub.broadcast(
+      :secop_client_pubsub,
+      "descriptive_data_change",
+      {:description_change, pubsub_topic, state}
+    )
+  end
+
+  defp publish_secop_conn_state(active, pubsub_topic) do
+    Phoenix.PubSub.broadcast(
+      :secop_client_pubsub,
+      "descriptive_data_change",
+      {:conn_state, pubsub_topic, active}
+    )
+  end
+
+  defp publish_statechange(new_state, pubsub_topic) do
+    Phoenix.PubSub.broadcast(
+          :secop_client_pubsub,
+          "state_change",
+          {:state_change,pubsub_topic, new_state}
+        )
+  end
+
+  defp publish_new_node(state, pubsub_topic) do
+    Phoenix.PubSub.broadcast(
+          :secop_client_pubsub,
+          "state_change",
+          {:state_change,pubsub_topic, state}
+        )
+  end
+
 end
 
 defmodule SEC_Node_Supervisor do
@@ -510,6 +556,9 @@ defmodule SEC_Node_Supervisor do
       _ -> {:ok, :node_already_running}
     end
   end
+
+
+
 end
 
 defmodule NodeTable do

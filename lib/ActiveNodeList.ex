@@ -2,7 +2,6 @@ defmodule ActiveNodeList do
   use GenServer
   alias Jason
 
-  @spec start_link(map()) :: :ignore | {:error, any()} | {:ok, pid()}
   def start_link(nodemap) do
     GenServer.start_link(__MODULE__, nodemap, name: __MODULE__)
   end
