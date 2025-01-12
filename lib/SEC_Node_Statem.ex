@@ -513,7 +513,7 @@ defmodule SEC_Node_Statem do
     Phoenix.PubSub.broadcast(
           :secop_client_pubsub,
           "new_node",
-          {:state_change,pubsub_topic, state}
+          {:new_node,pubsub_topic, state}
         )
   end
 
