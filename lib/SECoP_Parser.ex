@@ -53,7 +53,7 @@ defmodule SECoP_Parser do
   end
 
   def update(node_id, specifier, data) do
-    Logger.debug("Update message received. Specifier: #{specifier}, Data: #{data}")
+    #Logger.debug("Update message received. Specifier: #{specifier}, Data: #{data}")
     data_to_ets(node_id, specifier, data)
   end
 

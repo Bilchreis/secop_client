@@ -130,8 +130,12 @@ defmodule SEC_Node_Statem do
     {:keep_state_and_data, []}
   end
 
-  def handle_event(:info, :socket_disconnected, machine_state, state)
-      when machine_state in [:connected, :initialized] do
+  def handle_event(:info, :socket_disconnected, :initialized, state) do
+    publish_statechange(:disconnected, state.pubsub_topic)
+    {:next_state, :disconnected, %{state | state: :disconnected}, {:next_event, :internal, :connect}}
+  end
+
+  def handle_event(:info, :socket_disconnected, :connected, state) do
     publish_statechange(:disconnected, state.pubsub_topic)
     {:next_state, :disconnected, %{state | state: :disconnected}, {:next_event, :internal, :connect}}
   end
@@ -486,6 +490,7 @@ defmodule SEC_Node_Statem do
   end
 
   defp publish_descriptive_data_change(state, pubsub_topic) do
+    Logger.debug("publish descriptive data change for #{pubsub_topic}")
     Phoenix.PubSub.broadcast(
       :secop_client_pubsub,
       "descriptive_data_change",
@@ -494,6 +499,7 @@ defmodule SEC_Node_Statem do
   end
 
   defp publish_secop_conn_state(active, pubsub_topic) do
+    Logger.debug("publish conn state change for #{pubsub_topic} connection is active: #{active}")
     Phoenix.PubSub.broadcast(
       :secop_client_pubsub,
       "secop_conn_state",
@@ -502,6 +508,7 @@ defmodule SEC_Node_Statem do
   end
 
   defp publish_statechange(new_state, pubsub_topic) do
+    Logger.debug("publish statechange for #{pubsub_topic} --> #{new_state}")
     Phoenix.PubSub.broadcast(
           :secop_client_pubsub,
           "state_change",
@@ -510,6 +517,7 @@ defmodule SEC_Node_Statem do
   end
 
   defp publish_new_node(state, pubsub_topic) do
+    Logger.debug("publish new node added at: #{pubsub_topic}")
     Phoenix.PubSub.broadcast(
           :secop_client_pubsub,
           "new_node",
