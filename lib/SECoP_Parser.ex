@@ -49,11 +49,19 @@ defmodule SECoP_Parser do
         data_report
       )
 
+
+    pubsub_topic = "#{elem(node_id,0)}:#{elem(node_id,1)}:#{specifier}"
+    Phoenix.PubSub.broadcast(
+        :secop_client_pubsub,
+        pubsub_topic,
+        {:vlaue_update, pubsub_topic, data}
+      )
+
     {:ok, module, accessible, data_report}
   end
 
   def update(node_id, specifier, data) do
-    #Logger.debug("Update message received. Specifier: #{specifier}, Data: #{data}")
+    Logger.debug("Update message received. Specifier: #{specifier}, Data: #{data}")
     data_to_ets(node_id, specifier, data)
   end
 
