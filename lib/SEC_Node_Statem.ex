@@ -153,14 +153,28 @@ defmodule SEC_Node_Statem do
     {:keep_state_and_data, []}
   end
 
-  def handle_event({:call, from}, message, :disconnected, _state) do
-    Logger.warning("Node call while disconnected: #{elem(message, 0)}")
-    {:keep_state_and_data, {:reply, from, {:error, :disconnected}}}
+  def handle_event({:call, from}, message, :disconnected, state) do
+
+    reply = case message do
+      :get_state -> {:ok, state}
+      _          ->
+        Logger.warning("Node call while disconnected: #{inspect(message)}")
+        {:error, :disconnected}
+    end
+
+    {:keep_state_and_data, {:reply, from, reply}}
   end
 
-  def handle_event({:call, from}, message, :connected, _state) do
-    Logger.warning("Node call before initialization: #{elem(message, 0)}")
-    {:keep_state_and_data, {:reply, from, {:error, :uninitialized}}}
+  def handle_event({:call, from}, message, :connected, state) do
+
+    reply = case message do
+      :get_state -> {:ok, state}
+      _          ->
+        Logger.warning("Node call before initialization: #{inspect(message)}")
+        {:error, :uninitialized}
+    end
+
+    {:keep_state_and_data, {:reply, from,reply }}
   end
 
   def handle_event(
