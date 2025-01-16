@@ -521,12 +521,12 @@ defmodule SEC_Node_Statem do
     )
   end
 
-  defp publish_statechange(new_state, pubsub_topic) do
-    Logger.debug("publish statechange for #{pubsub_topic} --> #{new_state}")
+  defp publish_statechange(state, pubsub_topic) do
+    Logger.debug("publish statechange for #{pubsub_topic} --> #{state.state}")
     Phoenix.PubSub.broadcast(
           :secop_client_pubsub,
           "state_change",
-          {:state_change,pubsub_topic, new_state}
+          {:state_change,pubsub_topic, state}
         )
   end
 
