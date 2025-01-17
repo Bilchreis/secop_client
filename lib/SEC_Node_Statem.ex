@@ -108,10 +108,13 @@ defmodule SEC_Node_Statem do
   @impl :gen_statem
   def handle_event(:internal, :connect, :disconnected, %{node_id: node_id} = state) do
     case TcpConnection.is_connected(node_id) do
-      true  ->
-        publish_statechange(:connected, state.pubsub_topic)
-        {:next_state, :connected, %{ state | state: :connected} , {:next_event, :internal, :handshake}}
-      false -> {:keep_state, state, {{:timeout, :reconnect}, 5000, nil}}
+      true ->
+        updated_state = %{state | state: :connected}
+        publish_statechange(updated_state, state.pubsub_topic)
+        {:next_state, :connected, updated_state, {:next_event, :internal, :handshake}}
+
+      false ->
+        {:keep_state, state, {{:timeout, :reconnect}, 5000, nil}}
     end
   end
 
@@ -131,18 +134,21 @@ defmodule SEC_Node_Statem do
   end
 
   def handle_event(:info, :socket_disconnected, :initialized, state) do
-    publish_statechange(:disconnected, state.pubsub_topic)
-    {:next_state, :disconnected, %{state | state: :disconnected}, {:next_event, :internal, :connect}}
+    updated_state = %{state | state: :disconnected}
+    publish_statechange(updated_state, state.pubsub_topic)
+    {:next_state, :disconnected, updated_state, {:next_event, :internal, :connect}}
   end
 
   def handle_event(:info, :socket_disconnected, :connected, state) do
-    publish_statechange(:disconnected, state.pubsub_topic)
-    {:next_state, :disconnected, %{state | state: :disconnected}, {:next_event, :internal, :connect}}
+    updated_state = %{state | state: :disconnected}
+    publish_statechange(updated_state, state.pubsub_topic)
+    {:next_state, :disconnected, updated_state, {:next_event, :internal, :connect}}
   end
 
   def handle_event(:info, :socket_connected, :disconnected, state) do
-    publish_statechange(:connected, state.pubsub_topic)
-    {:next_state, :connected, %{ state | state: :connected}, {:next_event, :internal, :handshake}}
+    updated_state = %{state | state: :connected}
+    publish_statechange(updated_state, state.pubsub_topic)
+    {:next_state, :connected, updated_state, {:next_event, :internal, :handshake}}
   end
 
   def handle_event(:info, :socket_connected, :connected, _state) do
@@ -154,27 +160,31 @@ defmodule SEC_Node_Statem do
   end
 
   def handle_event({:call, from}, message, :disconnected, state) do
+    reply =
+      case message do
+        :get_state ->
+          {:ok, state}
 
-    reply = case message do
-      :get_state -> {:ok, state}
-      _          ->
-        Logger.warning("Node call while disconnected: #{inspect(message)}")
-        {:error, :disconnected}
-    end
+        _ ->
+          Logger.warning("Node call while disconnected: #{inspect(message)}")
+          {:error, :disconnected}
+      end
 
     {:keep_state_and_data, {:reply, from, reply}}
   end
 
   def handle_event({:call, from}, message, :connected, state) do
+    reply =
+      case message do
+        :get_state ->
+          {:ok, state}
 
-    reply = case message do
-      :get_state -> {:ok, state}
-      _          ->
-        Logger.warning("Node call before initialization: #{inspect(message)}")
-        {:error, :uninitialized}
-    end
+        _ ->
+          Logger.warning("Node call before initialization: #{inspect(message)}")
+          {:error, :uninitialized}
+      end
 
-    {:keep_state_and_data, {:reply, from,reply }}
+    {:keep_state_and_data, {:reply, from, reply}}
   end
 
   def handle_event(
@@ -195,8 +205,9 @@ defmodule SEC_Node_Statem do
           # Notihng changed, probably just a prior network disconnect
           %{changed: :equal, value: _} ->
             Logger.info("Descriptive data constant --> connected & initialized")
-            publish_statechange(:initialized, state.pubsub_topic)
-            {:next_state, :initialized, %{state | state: :initialized}, {:next_event, :internal, :activate}}
+            updated_state = %{state | state: :initialized}
+            publish_statechange(updated_state, state.pubsub_topic)
+            {:next_state, :initialized, updated_state, {:next_event, :internal, :activate}}
 
           # Description changed update uuid, equipment_id and description
           _ ->
@@ -223,8 +234,10 @@ defmodule SEC_Node_Statem do
                 equipment_id: equipment_id,
                 state: :initialized
             }
+
+            updated_state_descr = %{updated_state_descr | state: :initialized}
             publish_descriptive_data_change(updated_state_descr, state.pubsub_topic)
-            publish_statechange(:initialized, state.pubsub_topic)
+            publish_statechange(updated_state_descr, state.pubsub_topic)
             {:next_state, :initialized, updated_state_descr, {:next_event, :internal, :activate}}
         end
 
@@ -232,8 +245,10 @@ defmodule SEC_Node_Statem do
         Logger.warning(
           "NO answer on describe message for #{elem(node_id, 0)}:#{elem(node_id, 1)}, going into ERROR state"
         )
-        publish_statechange(:could_not_initialize, state.pubsub_topic)
-        {:next_state, :could_not_initialize, %{state | state: :could_not_initialize}}
+
+        updated_state = %{state | state: :could_not_initialize}
+        publish_statechange(updated_state, state.pubsub_topic)
+        {:next_state, :could_not_initialize, state}
 
         # TODO Handle error reply
     end
@@ -285,6 +300,7 @@ defmodule SEC_Node_Statem do
                 uuid: UUID.uuid1(),
                 equipment_id: equipment_id
             }
+
             publish_descriptive_data_change(updated_state_descr, state.pubsub_topic)
             {:keep_state, updated_state_descr, {:reply, from, {:describing, parsed_description}}}
         end
@@ -505,6 +521,7 @@ defmodule SEC_Node_Statem do
 
   defp publish_descriptive_data_change(state, pubsub_topic) do
     Logger.debug("publish descriptive data change for #{pubsub_topic}")
+
     Phoenix.PubSub.broadcast(
       :secop_client_pubsub,
       "descriptive_data_change",
@@ -514,6 +531,7 @@ defmodule SEC_Node_Statem do
 
   defp publish_secop_conn_state(active, pubsub_topic) do
     Logger.debug("publish conn state change for #{pubsub_topic} connection is active: #{active}")
+
     Phoenix.PubSub.broadcast(
       :secop_client_pubsub,
       "secop_conn_state",
@@ -523,22 +541,23 @@ defmodule SEC_Node_Statem do
 
   defp publish_statechange(state, pubsub_topic) do
     Logger.debug("publish statechange for #{pubsub_topic} --> #{state.state}")
+
     Phoenix.PubSub.broadcast(
-          :secop_client_pubsub,
-          "state_change",
-          {:state_change,pubsub_topic, state}
-        )
+      :secop_client_pubsub,
+      "state_change",
+      {:state_change, pubsub_topic, state }
+    )
   end
 
   defp publish_new_node(state, pubsub_topic) do
     Logger.debug("publish new node added at: #{pubsub_topic}")
-    Phoenix.PubSub.broadcast(
-          :secop_client_pubsub,
-          "new_node",
-          {:new_node,pubsub_topic, state}
-        )
-  end
 
+    Phoenix.PubSub.broadcast(
+      :secop_client_pubsub,
+      "new_node",
+      {:new_node, pubsub_topic, state}
+    )
+  end
 end
 
 defmodule SEC_Node_Supervisor do
@@ -578,9 +597,6 @@ defmodule SEC_Node_Supervisor do
       _ -> {:ok, :node_already_running}
     end
   end
-
-
-
 end
 
 defmodule NodeTable do

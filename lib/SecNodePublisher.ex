@@ -78,7 +78,7 @@ defmodule SecNodePublisher do
   end
 
   defp collect(state) do
-      new_values_map =
+    new_values_map =
       Enum.reduce(state.values_map, %{}, fn {module, parameters}, acc ->
         # acc is the accumulator for the outer Enum.reduce, which accumulates the updated map
         updated_parameters =
@@ -97,6 +97,7 @@ defmodule SecNodePublisher do
       end)
 
     new_state = %{state | values_map: new_values_map}
+
     Phoenix.PubSub.broadcast(
       :secop_client_pubsub,
       state.pubsub_topic,
