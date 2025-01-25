@@ -15,6 +15,8 @@ defmodule SecopClient do
       {Registry, keys: :unique, name: Registry.TcpConnection},
       {Registry, keys: :unique, name: Registry.SEC_Node_Statem},
       {Registry, keys: :unique, name: Registry.SecNodePublisher},
+      {Registry, keys: :unique, name: Registry.PlotPublisherSupervisor},
+      {Registry, keys: :unique, name: Registry.PlotPublisher},
       {SEC_Node_Supervisor, []},
       {TcpConnectionSupervisor, []},
       {BufferSupervisor, []},

@@ -560,8 +560,35 @@ defmodule SEC_Node_Statem do
   end
 end
 
+
+
+defmodule SEC_Node_Services do
+  use Supervisor
+  require Logger
+  def start_link(opts) do
+    Supervisor.start_link(__MODULE__, opts, name: String.to_atom("Node-Services-#{opts[:host]}:#{opts[:port]}"))
+  end
+
+  @impl true
+  def init(opts) do
+    children = [
+      {Plot_PublisherSupervisor, opts},
+      {SEC_Node_Statem, opts}
+
+
+    ]
+
+
+    Supervisor.init(children, strategy: :one_for_one)
+  end
+
+end
+
+
+
 defmodule SEC_Node_Supervisor do
   # Automatically defines child_spec/1
+  require Logger
   alias Jason
   use DynamicSupervisor
   @reconnect_backoff 5000
@@ -576,10 +603,11 @@ defmodule SEC_Node_Supervisor do
   end
 
   def start_child(opts) do
-    DynamicSupervisor.start_child(__MODULE__, {SEC_Node_Statem, opts})
+    DynamicSupervisor.start_child(__MODULE__, {SEC_Node_Services, opts})
   end
 
   def start_child_from_discovery(ip, _port, discovery_message) do
+
     discover_map = Jason.decode!(discovery_message)
 
     chl_ip = ip |> Tuple.to_list() |> Enum.join(".") |> String.to_charlist()
@@ -593,7 +621,7 @@ defmodule SEC_Node_Supervisor do
     }
 
     case Registry.lookup(Registry.SEC_Node_Statem, {chl_ip, node_port}) do
-      [] -> DynamicSupervisor.start_child(__MODULE__, {SEC_Node_Statem, opts})
+      [] -> DynamicSupervisor.start_child(__MODULE__, {SEC_Node_Services, opts})
       _ -> {:ok, :node_already_running}
     end
   end
