@@ -2,6 +2,10 @@ defmodule Plot_Publisher do
   use GenServer
   require Logger
 
+  alias Contex.Dataset
+  alias Contex.LinePlot
+  alias Contex.Plot
+
   @max_duration 30*60*60
   @max_buffer_len 200
   @interval 1000
@@ -58,10 +62,30 @@ defmodule Plot_Publisher do
 
 
   @impl true
-  def handle_info(:work, state) do
+  def handle_info(:work, %{buffer: buffer} = state) do
 
-    #Logger.info("Publish SVG")
-    #IO.inspect(:queue.to_list(state.buffer))
+    Logger.info("generating SVG")
+
+    readings = :queue.to_list(buffer)
+
+    ds = Dataset.new(readings,["x","t"])
+
+    line_plot = LinePlot.new(ds)
+
+    plot = Plot.new(600, 400, line_plot)
+    |> Plot.plot_options(%{legend_setting: :legend_right})
+    |> Plot.titles("#{state.parameter}", "With a fancy subtitle")
+
+    {:safe,svg} = Plot.to_svg(plot)
+
+    host      = state.host
+    port      = state.port
+    module    = state.module
+    parameter = state.parameter
+
+
+    Phoenix.PubSub.broadcast(:secop_client_pubsub, state.publish_topic,{host,port,module,parameter,{:svg, svg}})
+
 
 
     # Reschedule once more
