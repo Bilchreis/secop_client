@@ -86,7 +86,7 @@ defmodule Plot_Publisher do
     parameter = state.parameter
 
 
-    #Phoenix.PubSub.broadcast(:secop_client_pubsub, state.publish_topic,{host,port,module,parameter,{:svg, svg}})
+    Phoenix.PubSub.broadcast(:secop_client_pubsub, state.publish_topic,{host,port,module,parameter,{:svg, svg}})
 
 
 
@@ -98,7 +98,7 @@ defmodule Plot_Publisher do
 
   @impl true
   def handle_info({:value_update, pubsub_topic, data_report}, %{buffer: buffer, buff_len: buff_len} = state) do
-
+    Logger.info("received data")
     [value, qualifiers] = data_report
 
     {buffer, buff_len} = case qualifiers do
