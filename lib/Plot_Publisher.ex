@@ -60,8 +60,8 @@ defmodule Plot_Publisher do
   @impl true
   def handle_info(:work, state) do
 
-    Logger.info("Publish SVG")
-    IO.inspect(:queue.to_list(state.buffer))
+    #Logger.info("Publish SVG")
+    #IO.inspect(:queue.to_list(state.buffer))
 
 
     # Reschedule once more
@@ -72,39 +72,33 @@ defmodule Plot_Publisher do
 
   @impl true
   def handle_info({:value_update, pubsub_topic, data_report}, %{buffer: buffer, buff_len: buff_len} = state) do
+    [value, qualifiers] = data_report
 
+    {buffer, buff_len} = case qualifiers do
+      %{t: timestamp} ->
+        buffer =  :queue.in({timestamp, value},buffer)
 
-    value = Enum.at(data_report,0)
-    qualifiers = Enum.at(data_report,1)
+        buff_len = buff_len + 1
 
+        {:value,{t_peek, _v_peek}} = :queue.peek(buffer)
 
+        tdiff =   timestamp - t_peek
 
-    timestamp = qualifiers |> Map.get(:t,nil)
+        {buffer,buff_len} = cond do
 
+          buff_len > @max_buffer_len -> remove_reading(buffer,buff_len)
 
-    buffer =  :queue.in(%{value: value, t: timestamp},buffer)
-    buff_len = buff_len + 1
+          tdiff > @max_duration ->  remove_reading(buffer,buff_len)
 
-    {:value,first_item} = :queue.peek(buffer)
+          true -> {buffer,buff_len}
 
-    t_first = Map.get(first_item,:t)
+        end
+        {buffer, buff_len}
 
-    tdiff = if t_first == nil or timestamp == nil do
-      0
-      else
-      timestamp - t_first
-    end
-
-
-    {buffer,buff_len} = cond do
-
-      buff_len > @max_buffer_len -> remove_reading(buffer,buff_len)
-
-      tdiff > @max_duration ->  remove_reading(buffer,buff_len)
-
-      true -> {buffer,buff_len}
+      _ -> {buffer, buff_len}
 
     end
+
 
     {:noreply,%{state | buffer: buffer, buff_len: buff_len}}
   end
