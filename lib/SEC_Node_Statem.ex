@@ -566,7 +566,7 @@ defmodule SEC_Node_Services do
   use Supervisor
   require Logger
   def start_link(opts) do
-    Supervisor.start_link(__MODULE__, opts, name: String.to_atom("Node-Services-#{opts[:host]}:#{opts[:port]}"))
+    Supervisor.start_link(__MODULE__, opts)
   end
 
   @impl true
