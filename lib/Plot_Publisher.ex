@@ -1,9 +1,4 @@
 defmodule Plot_Publisher do
-  alias ElixirLS.LanguageServer.Plugins.Phoenix
-  alias Contex.LinePlot
-  alias Contex.Dataset
-  alias Contex.Plot
-
   use GenServer
   require Logger
 
@@ -42,22 +37,20 @@ defmodule Plot_Publisher do
       parameter: opts[:parameter] || %{},
       module: opts[:module],
       pubsub_topic: "#{opts[:host]}:#{opts[:port]}:#{opts[:module]}:#{opts[:parameter]}",
-      publish_topic: "#{opts[:host]}:#{opts[:port]}:#{opts[:module]}:#{opts[:parameter]}:plot",
       buffer: :queue.new(),
-      buff_len: 0,
-      svg: nil
+      buff_len: 0
     }
 
     Phoenix.PubSub.subscribe(:secop_client_pubsub, state.pubsub_topic)
 
-    schedule_publish()
+    schedule_collection()
 
     Logger.debug("Started Plot publisher for #{state.pubsub_topic}")
 
     {:ok, state}
   end
 
-  defp schedule_publish do
+  defp schedule_collection do
     # We schedule the work to happen in 2 hours (written in milliseconds).
     # Alternatively, one might write :timer.hours(2)
     Process.send_after(self(), :work, @interval)
@@ -65,33 +58,14 @@ defmodule Plot_Publisher do
 
 
   @impl true
-  def handle_info(:work, %{buffer: buffer} = state) do
-    Logger.info("generating SVG")
+  def handle_info(:work, state) do
 
-    readings = :queue.to_list(buffer)
-
-    ds = Dataset.new(readings,["x","t"])
-
-    line_plot = LinePlot.new(ds)
-
-    plot = Plot.new(600, 400, line_plot)
-    |> Plot.plot_options(%{legend_setting: :legend_right})
-    |> Plot.titles("#{state.parameter}", "With a fancy subtitle")
-
-    {:safe,svg} = Plot.to_svg(plot)
-
-    host      = state.host
-    port      = state.port
-    module    = state.module
-    parameter = state.parameter
-
-
-    #Phoenix.PubSub.broadcast(:secop_client_pubsub, state.publish_topic,{host,port,module,parameter,{:svg, svg}})
-
+    Logger.info("Publish SVG")
+    IO.inspect(:queue.to_list(state.buffer))
 
 
     # Reschedule once more
-    schedule_publish()
+    schedule_collection()
 
     {:noreply, state}
   end
@@ -99,33 +73,38 @@ defmodule Plot_Publisher do
   @impl true
   def handle_info({:value_update, pubsub_topic, data_report}, %{buffer: buffer, buff_len: buff_len} = state) do
 
-    [value, qualifiers] = data_report
 
-    {buffer, buff_len} = case qualifiers do
-      %{t: timestamp} ->
-        buffer =  :queue.in({timestamp, value},buffer)
+    value = Enum.at(data_report,0)
+    qualifiers = Enum.at(data_report,1)
 
-        buff_len = buff_len + 1
 
-        {:value,{t_peek, _v_peek}} = :queue.peek(buffer)
 
-        tdiff =   timestamp - t_peek
+    timestamp = qualifiers |> Map.get(:t,nil)
 
-        {buffer,buff_len} = cond do
 
-          buff_len > @max_buffer_len -> remove_reading(buffer,buff_len)
+    buffer =  :queue.in(%{value: value, t: timestamp},buffer)
+    buff_len = buff_len + 1
 
-          tdiff > @max_duration ->  remove_reading(buffer,buff_len)
+    {:value,first_item} = :queue.peek(buffer)
 
-          true -> {buffer,buff_len}
+    t_first = Map.get(first_item,:t)
 
-        end
-        {buffer, buff_len}
-
-      _ -> {buffer, buff_len}
-
+    tdiff = if t_first == nil or timestamp == nil do
+      0
+      else
+      timestamp - t_first
     end
 
+
+    {buffer,buff_len} = cond do
+
+      buff_len > @max_buffer_len -> remove_reading(buffer,buff_len)
+
+      tdiff > @max_duration ->  remove_reading(buffer,buff_len)
+
+      true -> {buffer,buff_len}
+
+    end
 
     {:noreply,%{state | buffer: buffer, buff_len: buff_len}}
   end
