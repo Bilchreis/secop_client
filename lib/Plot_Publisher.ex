@@ -45,8 +45,8 @@ defmodule Plot_Publisher do
       parameter: opts[:parameter] || %{},
       module: opts[:module],
       pubsub_topic: param_id,
-      plot_publish_topic: param_id <> ":plot",
-      spark_publish_topic: param_id <> ":spark",
+      plot_publish_topic: "plot",
+      spark_publish_topic: "spark",
       measbuff: %MeasBuff{}
 
     }
