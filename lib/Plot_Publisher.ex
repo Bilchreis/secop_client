@@ -2,13 +2,16 @@ defmodule Plot_Publisher do
   use GenServer
   require Logger
 
+  alias MeasBuff
   alias Contex.Dataset
   alias Contex.LinePlot
   alias Contex.Plot
+  alias Contex.Sparkline
 
-  @max_duration 30*60*60
-  @max_buffer_len 200
+
   @interval 1000
+
+
 
   def start_link(opts) do
     GenServer.start_link(
@@ -32,6 +35,7 @@ defmodule Plot_Publisher do
 
   @impl true
   def init(opts) do
+    param_id = "#{opts[:host]}:#{opts[:port]}:#{opts[:module]}:#{opts[:parameter]}"
     state = %{
       host: opts[:host],
       port: opts[:port],
@@ -40,9 +44,11 @@ defmodule Plot_Publisher do
       datainfo: {opts[:datainfo]},
       parameter: opts[:parameter] || %{},
       module: opts[:module],
-      pubsub_topic: "#{opts[:host]}:#{opts[:port]}:#{opts[:module]}:#{opts[:parameter]}",
-      buffer: :queue.new(),
-      buff_len: 0
+      pubsub_topic: param_id,
+      plot_publish_topic: param_id <> ":plot",
+      spark_publish_topic: param_id <> ":spark",
+      measbuff: %MeasBuff{}
+
     }
 
     Phoenix.PubSub.subscribe(:secop_client_pubsub, state.pubsub_topic)
@@ -62,30 +68,44 @@ defmodule Plot_Publisher do
 
 
   @impl true
-  def handle_info(:work, %{buffer: buffer} = state) do
-
-    Logger.info("generating SVG")
-
-    readings = :queue.to_list(buffer)
-
-    ds = Dataset.new(readings,["x","t"])
-
-    line_plot = LinePlot.new(ds)
-
-    plot = Plot.new(600, 400, line_plot)
-    |> Plot.plot_options(%{legend_setting: :legend_right})
-    |> Plot.titles("#{state.parameter}", "With a fancy subtitle")
-
-    {:safe,svg} = Plot.to_svg(plot)
-
-    host      = state.host
-    port      = state.port
-    module    = state.module
-    parameter = state.parameter
+  def handle_info(:work, %{measbuff: measbuff} = state) do
 
 
-    Phoenix.PubSub.broadcast(:secop_client_pubsub, state.publish_topic,{host,port,module,parameter,{:svg, svg}})
 
+    readings = MeasBuff.get_buffer_list(measbuff)
+    readings_spark = MeasBuff.get_spark_list(measbuff)
+
+    if readings != [] do
+
+      ds = Dataset.new(readings,["x","t"])
+
+      line_plot = LinePlot.new(ds)
+
+      plot = Plot.new(600, 400, line_plot)
+      |> Plot.plot_options(%{legend_setting: :legend_right})
+      |> Plot.titles("#{state.parameter}", "With a fancy subtitle")
+
+      {:safe,svg} = Plot.to_svg(plot)
+
+      host      = state.host
+      port      = state.port
+      module    = state.module
+      parameter = state.parameter
+
+
+      Phoenix.PubSub.broadcast(:secop_client_pubsub, state.plot_publish_topic,{host,port,module,parameter,{:plot, svg}})
+
+
+    if readings_spark != [] do
+      {:safe, [svg] } =  Sparkline.new(readings_spark) |> Sparkline.colours("#fad48e", "#ff9838")
+      |> Sparkline.draw()
+
+
+      Phoenix.PubSub.broadcast(:secop_client_pubsub, state.spark_publish_topic,{host,port,module,parameter,{:spark, svg}})
+
+    end
+
+    end
 
 
     # Reschedule once more
@@ -95,43 +115,11 @@ defmodule Plot_Publisher do
   end
 
   @impl true
-  def handle_info({:value_update, pubsub_topic, data_report}, %{buffer: buffer, buff_len: buff_len} = state) do
-    [value, qualifiers] = data_report
-
-    {buffer, buff_len} = case qualifiers do
-      %{t: timestamp} ->
-        buffer =  :queue.in({timestamp, value},buffer)
-
-        buff_len = buff_len + 1
-
-        {:value,{t_peek, _v_peek}} = :queue.peek(buffer)
-
-        tdiff =   timestamp - t_peek
-
-        {buffer,buff_len} = cond do
-
-          buff_len > @max_buffer_len -> remove_reading(buffer,buff_len)
-
-          tdiff > @max_duration ->  remove_reading(buffer,buff_len)
-
-          true -> {buffer,buff_len}
-
-        end
-        {buffer, buff_len}
-
-      _ -> {buffer, buff_len}
-
-    end
-
-
-    {:noreply,%{state | buffer: buffer, buff_len: buff_len}}
+  def handle_info({:value_update, _pubsub_topic, data_report}, %{measbuff: measbuff} = state) do
+    {:noreply,%{state | measbuff: MeasBuff.add_reading(measbuff,data_report)}}
   end
 
-  def remove_reading(buffer, buff_len) do
-    {{:value,_item},buffer} = :queue.out(buffer)
-    buff_len = buff_len - 1
-    {buffer,buff_len}
-  end
+
 
 end
 
