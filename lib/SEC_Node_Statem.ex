@@ -606,6 +606,22 @@ defmodule SEC_Node_Supervisor do
     DynamicSupervisor.start_child(__MODULE__, {SEC_Node_Services, opts})
   end
 
+
+  def get_active_nodes() do
+    Registry.select(Registry.SEC_Node_Statem, [{{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$2", :"$3"}}]}]) |>
+    Enum.reduce(%{}, fn {_id, pid, _value}, acc ->
+      case SEC_Node_Statem.get_state(pid) do
+        {:ok, state} ->
+          node_id = state.node_id
+
+          Map.put(acc, node_id, state)
+
+        _ ->
+          acc
+      end
+    end)
+  end
+
   def start_child_from_discovery(ip, _port, discovery_message) do
 
     discover_map = Jason.decode!(discovery_message)
@@ -625,6 +641,10 @@ defmodule SEC_Node_Supervisor do
       _ -> {:ok, :node_already_running}
     end
   end
+
+
+
+
 end
 
 defmodule NodeTable do
