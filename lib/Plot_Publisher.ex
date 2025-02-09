@@ -69,44 +69,29 @@ defmodule Plot_Publisher do
 
   @impl true
   def handle_info(:work, %{measbuff: measbuff} = state) do
-
-
-
     readings = MeasBuff.get_buffer_list(measbuff)
     readings_spark = MeasBuff.get_spark_list(measbuff)
 
     if readings != [] do
-
-      ds = Dataset.new(readings,["x","t"])
-
-      line_plot = LinePlot.new(ds)
-
-      plot = Plot.new(600, 400, line_plot)
-      |> Plot.plot_options(%{legend_setting: :legend_right})
-      |> Plot.titles("#{state.parameter}", "With a fancy subtitle")
-
-      {:safe,svg} = Plot.to_svg(plot)
-
       host      = state.host
       port      = state.port
       module    = state.module
       parameter = state.parameter
 
+      Phoenix.PubSub.broadcast(
+        :secop_client_pubsub,
+        state.plot_publish_topic,
+        {host, port, module, parameter, {:plot_data, readings}}
+      )
 
-      Phoenix.PubSub.broadcast(:secop_client_pubsub, state.plot_publish_topic,{host,port,module,parameter,{:plot, svg}})
-
-
-    if readings_spark != [] do
-      {:safe, [svg] } =  Sparkline.new(readings_spark) |> Sparkline.colours("#fad48e", "#ff9838")
-      |> Sparkline.draw()
-
-
-      Phoenix.PubSub.broadcast(:secop_client_pubsub, state.spark_publish_topic,{host,port,module,parameter,{:spark, svg}})
-
+      if readings_spark != [] do
+        Phoenix.PubSub.broadcast(
+          :secop_client_pubsub,
+          state.spark_publish_topic,
+          {host, port, module, parameter, {:spark_data, readings_spark}}
+        )
+      end
     end
-
-    end
-
 
     # Reschedule once more
     schedule_collection()
