@@ -7,7 +7,7 @@ defmodule MeasBuff do
 
 
   @max_duration 30*60*60
-  @max_buffer_len 200
+  @max_buffer_len 2000
 
   @type t :: %MeasBuff{
           buffer: :queue.queue(any()),

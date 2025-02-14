@@ -72,26 +72,28 @@ defmodule Plot_Publisher do
     readings = MeasBuff.get_buffer_list(measbuff)
     readings_spark = MeasBuff.get_spark_list(measbuff)
 
-    if readings != [] do
-      host      = state.host
-      port      = state.port
-      module    = state.module
-      parameter = state.parameter
+    host      = state.host
+    port      = state.port
+    module    = state.module
+    parameter = state.parameter
 
+
+    if readings != [] do
       Phoenix.PubSub.broadcast(
         :secop_client_pubsub,
         state.plot_publish_topic,
         {host, port, module, parameter, {:plot_data, readings}}
       )
-
-      if readings_spark != [] do
-        Phoenix.PubSub.broadcast(
-          :secop_client_pubsub,
-          state.spark_publish_topic,
-          {host, port, module, parameter, {:spark_data, readings_spark}}
-        )
-      end
     end
+
+    if readings_spark != [] do
+      Phoenix.PubSub.broadcast(
+        :secop_client_pubsub,
+        state.spark_publish_topic,
+        {host, port, module, parameter, {:spark_data, readings_spark}}
+      )
+    end
+
 
     # Reschedule once more
     schedule_collection()
