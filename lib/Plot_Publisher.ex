@@ -3,10 +3,7 @@ defmodule Plot_Publisher do
   require Logger
 
   alias MeasBuff
-  alias Contex.Dataset
-  alias Contex.LinePlot
-  alias Contex.Plot
-  alias Contex.Sparkline
+
 
 
   @interval 1000
