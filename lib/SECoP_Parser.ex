@@ -38,7 +38,7 @@ defmodule SECoP_Parser do
   end
 
   defp data_to_ets(node_id, specifier, data) do
-    {:ok, data_report} = Jason.decode(data,keys: :atoms)
+    {:ok, data_report} = Jason.decode(data, keys: :atoms)
 
     {:ok, module, accessible} = splitSpecifier(specifier)
 
@@ -69,12 +69,12 @@ defmodule SECoP_Parser do
     # Logger.debug("Describe message received. Specifier: #{specifier}, Data: #{data}")
     {:ok, description} = Jason.decode(data, keys: :atoms)
 
-
     opts = %{
       host: elem(node_id, 0),
       port: elem(node_id, 1)
     }
-    parsed_description = parse__node_description(description,opts)
+
+    parsed_description = parse__node_description(description, opts)
 
     {:ok, :inserted} = NodeTable.insert(node_id, :description, parsed_description)
     {:ok, :inserted} = NodeTable.insert(node_id, :raw_description, description)
@@ -167,7 +167,7 @@ defmodule SECoP_Parser do
     {:ok, empty_values_map}
   end
 
-  def parse__node_description(description,opts) do
+  def parse__node_description(description, opts) do
     node_descripttion = %{
       properties: Map.drop(description, [:modules])
     }
@@ -175,8 +175,8 @@ defmodule SECoP_Parser do
     # add all run parse_module_description for each module in desctription[:modules] and put result in a map
     modules =
       Enum.reduce(description[:modules], %{}, fn {module_name, module_description}, acc ->
-        module_opts = Map.put( opts,:module,module_name)
-        parsed_module_description = parse_module_description(module_description,module_opts)
+        module_opts = Map.put(opts, :module, module_name)
+        parsed_module_description = parse_module_description(module_description, module_opts)
         Map.put(acc, module_name, parsed_module_description)
       end)
 
@@ -185,7 +185,7 @@ defmodule SECoP_Parser do
     node_descripttion
   end
 
-  def parse_module_description(module_description,opts) do
+  def parse_module_description(module_description, opts) do
     {parameters, commands} =
       Enum.reduce(module_description[:accessibles], {%{}, %{}}, fn {accessible_name,
                                                                     accessible_data},
@@ -204,16 +204,15 @@ defmodule SECoP_Parser do
       commands: commands
     }
 
-    for {parameter,param_descr} <- parameters do
-      param_opts = Map.put(opts,:parameter,parameter) |> Map.put(:datainfo,param_descr.datainfo)
+    for {parameter, param_descr} <- parameters do
+      param_opts =
+        Map.put(opts, :parameter, parameter) |> Map.put(:datainfo, param_descr.datainfo)
 
       if param_descr.datainfo.type == "double" do
         Plot_PublisherSupervisor.start_child(param_opts)
       else
         Logger.info("no publisher for type: #{inspect(param_descr.datainfo.type)}")
       end
-
-
     end
 
     parsed_module_description

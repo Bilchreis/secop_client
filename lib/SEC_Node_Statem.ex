@@ -545,7 +545,7 @@ defmodule SEC_Node_Statem do
     Phoenix.PubSub.broadcast(
       :secop_client_pubsub,
       "state_change",
-      {:state_change, pubsub_topic, state }
+      {:state_change, pubsub_topic, state}
     )
   end
 
@@ -560,11 +560,10 @@ defmodule SEC_Node_Statem do
   end
 end
 
-
-
 defmodule SEC_Node_Services do
   use Supervisor
   require Logger
+
   def start_link(opts) do
     Supervisor.start_link(__MODULE__, opts)
   end
@@ -574,17 +573,11 @@ defmodule SEC_Node_Services do
     children = [
       {Plot_PublisherSupervisor, opts},
       {SEC_Node_Statem, opts}
-
-
     ]
-
 
     Supervisor.init(children, strategy: :one_for_one)
   end
-
 end
-
-
 
 defmodule SEC_Node_Supervisor do
   # Automatically defines child_spec/1
@@ -606,10 +599,11 @@ defmodule SEC_Node_Supervisor do
     DynamicSupervisor.start_child(__MODULE__, {SEC_Node_Services, opts})
   end
 
-
   def get_active_nodes() do
-    Registry.select(Registry.SEC_Node_Statem, [{{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$2", :"$3"}}]}]) |>
-    Enum.reduce(%{}, fn {_id, pid, _value}, acc ->
+    Registry.select(Registry.SEC_Node_Statem, [
+      {{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$2", :"$3"}}]}
+    ])
+    |> Enum.reduce(%{}, fn {_id, pid, _value}, acc ->
       case SEC_Node_Statem.get_state(pid) do
         {:ok, state} ->
           node_id = state.node_id
@@ -623,7 +617,6 @@ defmodule SEC_Node_Supervisor do
   end
 
   def start_child_from_discovery(ip, _port, discovery_message) do
-
     discover_map = Jason.decode!(discovery_message)
 
     chl_ip = ip |> Tuple.to_list() |> Enum.join(".") |> String.to_charlist()
@@ -641,10 +634,6 @@ defmodule SEC_Node_Supervisor do
       _ -> {:ok, :node_already_running}
     end
   end
-
-
-
-
 end
 
 defmodule NodeTable do

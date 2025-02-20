@@ -1,7 +1,6 @@
-defmodule MeasBuffTest  do
+defmodule MeasBuffTest do
   use ExUnit.Case
   alias MeasBuff
-
 
   test "enqueue adds a new reading" do
     meas_buff = %MeasBuff{}
@@ -57,12 +56,11 @@ defmodule MeasBuffTest  do
     meas_buff = %MeasBuff{}
     meas_buff = MeasBuff.enqueue(meas_buff, 1.0, 10)
     meas_buff = MeasBuff.enqueue(meas_buff, 2.0, 20)
-    meas_buff = MeasBuff.enqueue(meas_buff, MeasBuff.get_max_duration + 10, 30)
+    meas_buff = MeasBuff.enqueue(meas_buff, MeasBuff.get_max_duration() + 10, 30)
 
     cleaned_buff = MeasBuff.clean_up(meas_buff)
 
-    assert cleaned_buff.buff_len < 3  # Older readings should be removed
+    # Older readings should be removed
+    assert cleaned_buff.buff_len < 3
   end
-
-
 end

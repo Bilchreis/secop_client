@@ -4,11 +4,7 @@ defmodule Plot_Publisher do
 
   alias MeasBuff
 
-
-
   @interval 1000
-
-
 
   def start_link(opts) do
     GenServer.start_link(
@@ -33,6 +29,7 @@ defmodule Plot_Publisher do
   @impl true
   def init(opts) do
     param_id = "#{opts[:host]}:#{opts[:port]}:#{opts[:module]}:#{opts[:parameter]}"
+
     state = %{
       host: opts[:host],
       port: opts[:port],
@@ -45,7 +42,6 @@ defmodule Plot_Publisher do
       plot_publish_topic: "plot",
       spark_publish_topic: "spark",
       measbuff: %MeasBuff{}
-
     }
 
     Phoenix.PubSub.subscribe(:secop_client_pubsub, state.pubsub_topic)
@@ -63,19 +59,17 @@ defmodule Plot_Publisher do
     Process.send_after(self(), :work, @interval)
   end
 
-
   @impl true
   def handle_info(:work, %{measbuff: measbuff} = state) do
     readings = MeasBuff.get_buffer_list(measbuff)
-    readings_spark = MeasBuff.get_spark_list(measbuff)
 
-    host      = state.host
-    port      = state.port
-    module    = state.module
+
+    host = state.host
+    port = state.port
+    module = state.module
     parameter = state.parameter
 
-
-    if readings != [] do
+    if elem(readings,0) != []  do
       Phoenix.PubSub.broadcast(
         :secop_client_pubsub,
         state.plot_publish_topic,
@@ -83,13 +77,6 @@ defmodule Plot_Publisher do
       )
     end
 
-    if readings_spark != [] do
-      Phoenix.PubSub.broadcast(
-        :secop_client_pubsub,
-        state.spark_publish_topic,
-        {host, port, module, parameter, {:spark_data, readings_spark}}
-      )
-    end
 
 
     # Reschedule once more
@@ -100,13 +87,9 @@ defmodule Plot_Publisher do
 
   @impl true
   def handle_info({:value_update, _pubsub_topic, data_report}, %{measbuff: measbuff} = state) do
-    {:noreply,%{state | measbuff: MeasBuff.add_reading(measbuff,data_report)}}
+    {:noreply, %{state | measbuff: MeasBuff.add_reading(measbuff, data_report)}}
   end
-
-
-
 end
-
 
 defmodule Plot_PublisherSupervisor do
   use DynamicSupervisor
@@ -116,7 +99,7 @@ defmodule Plot_PublisherSupervisor do
       __MODULE__,
       opts,
       name: {:via, Registry, {Registry.PlotPublisherSupervisor, {opts[:host], opts[:port]}}}
-      )
+    )
   end
 
   @impl true
@@ -125,14 +108,16 @@ defmodule Plot_PublisherSupervisor do
   end
 
   def start_child(opts) do
-    [{plt_pub_sup_pid, _value}] = Registry.lookup(Registry.PlotPublisherSupervisor, {opts[:host], opts[:port]})
+    [{plt_pub_sup_pid, _value}] =
+      Registry.lookup(Registry.PlotPublisherSupervisor, {opts[:host], opts[:port]})
+
     DynamicSupervisor.start_child(plt_pub_sup_pid, {Plot_Publisher, opts})
   end
-
 
   # Function to terminate all children
   def terminate_all_children(node_id) do
     [{plt_pub_sup_pid, _value}] = Registry.lookup(Registry.PlotPublisherSupervisor, node_id)
+
     DynamicSupervisor.which_children(plt_pub_sup_pid)
     |> Enum.each(fn {_, pid, _, _} ->
       DynamicSupervisor.terminate_child(plt_pub_sup_pid, pid)
