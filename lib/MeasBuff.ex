@@ -5,7 +5,7 @@ defmodule MeasBuff do
 
   defstruct buffer_value: :queue.new(), buffer_timestamp: :queue.new(), buff_len: 0
 
-  @max_duration 30 * 60 * 60
+  @max_duration 30 * 60
   @max_buffer_len 2000
 
   @type t :: %MeasBuff{
