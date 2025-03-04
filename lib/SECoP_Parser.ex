@@ -14,6 +14,7 @@ defmodule SECoP_Parser do
       Logger.error(
         "Error message received: #{error_message}, specifier: #{specifier}, data: #{data}"
       )
+      data = Jason.decode(data, keys: :atoms)
 
       case error_message do
         "error_update" -> error_update(node_id, specifier, data)
