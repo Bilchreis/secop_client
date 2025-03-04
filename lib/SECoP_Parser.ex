@@ -14,6 +14,18 @@ defmodule SECoP_Parser do
       Logger.error(
         "Error message received: #{error_message}, specifier: #{specifier}, data: #{data}"
       )
+
+      case error_message do
+        "error_update" -> error_update(node_id, specifier, data)
+        "error_describe" -> error_response(:error_describe, node_id, specifier, data)
+        "error_deactivate" -> error_response(:error_deactivate, node_id, specifier, data)
+        "error_ping" -> error_response(:error_ping, node_id, specifier, data)
+        "error_activate" -> error_response(:error_activate, node_id, specifier, data)
+        "error_read" -> error_response(:error_read, node_id, specifier, data)
+        "error_change" -> error_response(:error_change, node_id, specifier, data)
+        "error_do" -> error_response(:error_do, node_id, specifier, data)
+        _ -> Logger.warning("Unknown error message received: #{message}")
+      end
     else
       # Handle all Normal SECoP Messages:
       case split_message do
@@ -216,5 +228,23 @@ defmodule SECoP_Parser do
     end
 
     parsed_module_description
+  end
+
+
+  def error_update(node_id, specifier, data) do
+    Logger.warning("Error update message received. Specifier: #{specifier}, Data: #{data}")
+  end
+
+  def error_response(error_code , node_id, specifier, data) do
+    error_class = Enum.at(data,0)
+    error_text  = Enum.at(data,1)
+    error_dict  = Enum.at(data,2)
+
+    Registry.dispatch(Registry.SEC_Node_Statem, node_id, fn entries ->
+      for {pid, _value} <- entries do
+        send(pid, {error_code, specifier, error_class, error_text, error_dict})
+      end
+    end)
+
   end
 end
