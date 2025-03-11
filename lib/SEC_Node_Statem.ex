@@ -612,7 +612,7 @@ defmodule SEC_Node_Services do
   @impl true
   def init(opts) do
     children = [
-      {Plot_PublisherSupervisor, opts},
+      {PlotPublisherSupervisor, opts},
       {SEC_Node_Statem, opts}
     ]
 

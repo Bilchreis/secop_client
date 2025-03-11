@@ -1,4 +1,4 @@
-defmodule Plot_Publisher do
+defmodule PlotPublisher do
   use GenServer
   require Logger
 
@@ -11,7 +11,7 @@ defmodule Plot_Publisher do
       opts,
       name:
         {:via, Registry,
-         {Registry.SecNodePublisher, {opts[:host], opts[:port], opts[:module], opts[:parameter]}}}
+         {Registry.PlotPublisher, {opts[:host], opts[:port], opts[:module], opts[:parameter]}}}
     )
   end
 
@@ -54,7 +54,7 @@ defmodule Plot_Publisher do
   end
 
   @impl true
-  def handle_call({:get_data}, _from, %{measbuff: measbuff} = state) do
+  def handle_call(:get_data, _from, %{measbuff: measbuff} = state) do
     readings = MeasBuff.get_buffer_list(measbuff)
 
     {:reply, {:ok, readings}, state}
@@ -66,7 +66,7 @@ defmodule Plot_Publisher do
   end
 end
 
-defmodule Plot_PublisherSupervisor do
+defmodule PlotPublisherSupervisor do
   use DynamicSupervisor
 
   def start_link(opts) do
@@ -86,7 +86,7 @@ defmodule Plot_PublisherSupervisor do
     [{plt_pub_sup_pid, _value}] =
       Registry.lookup(Registry.PlotPublisherSupervisor, {opts[:host], opts[:port]})
 
-    DynamicSupervisor.start_child(plt_pub_sup_pid, {Plot_Publisher, opts})
+    DynamicSupervisor.start_child(plt_pub_sup_pid, {PlotPublisher, opts})
   end
 
   # Function to terminate all children

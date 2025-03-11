@@ -222,11 +222,9 @@ defmodule SECoP_Parser do
       param_opts =
         Map.put(opts, :parameter, parameter) |> Map.put(:datainfo, param_descr.datainfo)
 
-      if param_descr.datainfo.type == "double" do
-        Plot_PublisherSupervisor.start_child(param_opts)
-      else
-        Logger.info("no publisher for type: #{inspect(param_descr.datainfo.type)}")
-      end
+
+        PlotPublisherSupervisor.start_child(param_opts)
+
     end
 
     parsed_module_description
