@@ -14,7 +14,8 @@ defmodule SECoP_Parser do
       Logger.error(
         "Error message received: #{error_message}, specifier: #{specifier}, data: #{data}"
       )
-      {:ok,data} = Jason.decode(data, keys: :atoms)
+
+      {:ok, data} = Jason.decode(data, keys: :atoms)
 
       case error_message do
         "error_update" -> error_update(node_id, specifier, data)
@@ -231,21 +232,19 @@ defmodule SECoP_Parser do
     parsed_module_description
   end
 
-
   def error_update(node_id, specifier, data) do
     Logger.warning("Error update message received. Specifier: #{specifier}, Data: #{data}")
   end
 
-  def error_response(error_code , node_id, specifier, data) do
-    error_class = Enum.at(data,0)
-    error_text  = Enum.at(data,1)
-    error_dict  = Enum.at(data,2)
+  def error_response(error_code, node_id, specifier, data) do
+    error_class = Enum.at(data, 0)
+    error_text = Enum.at(data, 1)
+    error_dict = Enum.at(data, 2)
 
     Registry.dispatch(Registry.SEC_Node_Statem, node_id, fn entries ->
       for {pid, _value} <- entries do
         send(pid, {error_code, specifier, error_class, error_text, error_dict})
       end
     end)
-
   end
 end

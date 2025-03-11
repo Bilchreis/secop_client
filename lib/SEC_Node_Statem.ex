@@ -249,7 +249,6 @@ defmodule SEC_Node_Statem do
         updated_state = %{state | state: :could_not_initialize}
         publish_statechange(updated_state, state.pubsub_topic)
         {:next_state, :could_not_initialize, state}
-
     end
   end
 
@@ -259,7 +258,6 @@ defmodule SEC_Node_Statem do
         publish_secop_conn_state(true, state.pubsub_topic)
         updated_state = %{state | active: true}
         {:keep_state, updated_state}
-
 
       {:error, _} ->
         {:keep_state_and_data, []}
@@ -311,11 +309,11 @@ defmodule SEC_Node_Statem do
 
         {:keep_state_and_data, {:reply, from, {:error, :timeout}}}
 
-      {:error,{specifier, error_class, error_text, error_dict}} ->
+      {:error, {specifier, error_class, error_text, error_dict}} ->
         Logger.error("Error on describe request: #{error_text}")
-        {:keep_state_and_data, {:reply, from, {:error,:describe, specifier, error_class, error_text, error_dict}}}
 
-
+        {:keep_state_and_data,
+         {:reply, from, {:error, :describe, specifier, error_class, error_text, error_dict}}}
     end
   end
 
@@ -330,9 +328,12 @@ defmodule SEC_Node_Statem do
 
       {:error, :timeout} ->
         {:keep_state_and_data, {:reply, from, {:error, :timeout}}}
+
       {:error, {specifier, error_class, error_text, error_dict}} ->
         Logger.error("Error on activate request: #{error_text}")
-        {:keep_state_and_data, {:reply, from, {:error,:activate, specifier, error_class, error_text, error_dict}}}
+
+        {:keep_state_and_data,
+         {:reply, from, {:error, :activate, specifier, error_class, error_text, error_dict}}}
     end
   end
 
@@ -346,9 +347,12 @@ defmodule SEC_Node_Statem do
         updated_state = %{state | active: false}
         publish_secop_conn_state(false, state.pubsub_topic)
         {:keep_state, updated_state, {:reply, from, {:inactive}}}
+
       {:error_deactivate, specifier, error_class, error_text, error_dict} ->
         Logger.error("Error on deactivate request: #{error_text}")
-        {:keep_state_and_data, {:reply, from, {:error,:deactivate, specifier, error_class, error_text, error_dict}}}
+
+        {:keep_state_and_data,
+         {:reply, from, {:error, :deactivate, specifier, error_class, error_text, error_dict}}}
     after
       5000 -> {:keep_state_and_data, {:reply, from, {:error, :timeout}}}
     end
@@ -370,9 +374,12 @@ defmodule SEC_Node_Statem do
       {:changed, r_module, r_parameter, data_report} ->
         Logger.info("Value of #{r_module}:#{r_module} changed to #{Jason.encode!(data_report)}")
         {:keep_state_and_data, {:reply, from, {:changed, r_module, r_parameter, data_report}}}
+
       {:error_change, specifier, error_class, error_text, error_dict} ->
         Logger.error("Error on change request: #{error_text}")
-        {:keep_state_and_data, {:reply, from, {:error, :change, specifier, error_class, error_text, error_dict}}}
+
+        {:keep_state_and_data,
+         {:reply, from, {:error, :change, specifier, error_class, error_text, error_dict}}}
     after
       5000 -> {:keep_state_and_data, {:reply, from, {:error, :timeout}}}
     end
@@ -396,9 +403,12 @@ defmodule SEC_Node_Statem do
         )
 
         {:keep_state_and_data, {:reply, from, {:changed, r_module, r_command, data_report}}}
+
       {:error_do, specifier, error_class, error_text, error_dict} ->
         Logger.error("Error on do request: #{error_text}")
-        {:keep_state_and_data, {:reply, from, {:error, :do, specifier, error_class, error_text, error_dict}}}
+
+        {:keep_state_and_data,
+         {:reply, from, {:error, :do, specifier, error_class, error_text, error_dict}}}
     after
       5000 -> {:keep_state_and_data, {:reply, from, {:error, :timeout}}}
     end
@@ -425,7 +435,9 @@ defmodule SEC_Node_Statem do
 
       {:error_read, specifier, error_class, error_text, error_dict} ->
         Logger.error("Error on read request: #{error_text}")
-        {:keep_state_and_data, {:reply, from, {:error, :read, specifier, error_class, error_text, error_dict}}}
+
+        {:keep_state_and_data,
+         {:reply, from, {:error, :read, specifier, error_class, error_text, error_dict}}}
     after
       5000 -> {:keep_state_and_data, {:reply, from, {:error, :timeout}}}
     end
@@ -444,9 +456,12 @@ defmodule SEC_Node_Statem do
       {:pong, id, data} ->
         Logger.info("Corresponding Pong received: #{Jason.encode!(data)}")
         {:keep_state_and_data, {:reply, from, {:pong, id, data}}}
+
       {:error_ping, specifier, error_class, error_text, error_dict} ->
         Logger.error("Error on ping request: #{error_text}")
-        {:keep_state_and_data, {:reply, from, {:error, :ping, specifier, error_class, error_text, error_dict}}}
+
+        {:keep_state_and_data,
+         {:reply, from, {:error, :ping, specifier, error_class, error_text, error_dict}}}
     after
       5000 -> {:keep_state_and_data, {:reply, from, {:error, :timeout}}}
     end
@@ -520,6 +535,7 @@ defmodule SEC_Node_Statem do
       {:describe, specifier, parsed_description} ->
         Logger.info("Description received")
         {:ok, specifier, parsed_description}
+
       {:error_describe, specifier, error_class, error_text, error_dict} ->
         Logger.error("Error on describe request: #{error_text}")
         {:error, {specifier, error_class, error_text, error_dict}}

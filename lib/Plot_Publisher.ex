@@ -4,7 +4,6 @@ defmodule Plot_Publisher do
 
   alias MeasBuff
 
-  @interval 1000
 
   def start_link(opts) do
     GenServer.start_link(
@@ -26,6 +25,11 @@ defmodule Plot_Publisher do
     }
   end
 
+  def get_data(parameter_id) do
+    [{plt_pub_pid, _value}] = Registry.lookup(Registry.PlotPublisher, parameter_id)
+    GenServer.call(plt_pub_pid, :get_data)
+  end
+
   @impl true
   def init(opts) do
     param_id = "#{opts[:host]}:#{opts[:port]}:#{opts[:module]}:#{opts[:parameter]}"
@@ -39,50 +43,21 @@ defmodule Plot_Publisher do
       parameter: opts[:parameter] || %{},
       module: opts[:module],
       pubsub_topic: param_id,
-      plot_publish_topic: "plot",
-      spark_publish_topic: "spark",
       measbuff: %MeasBuff{}
     }
 
     Phoenix.PubSub.subscribe(:secop_client_pubsub, state.pubsub_topic)
-
-    schedule_collection()
 
     Logger.debug("Started Plot publisher for #{state.pubsub_topic}")
 
     {:ok, state}
   end
 
-  defp schedule_collection do
-    # We schedule the work to happen in 2 hours (written in milliseconds).
-    # Alternatively, one might write :timer.hours(2)
-    Process.send_after(self(), :work, @interval)
-  end
-
   @impl true
-  def handle_info(:work, %{measbuff: measbuff} = state) do
+  def handle_call({:get_data}, _from, %{measbuff: measbuff} = state) do
     readings = MeasBuff.get_buffer_list(measbuff)
 
-
-    host = state.host
-    port = state.port
-    module = state.module
-    parameter = state.parameter
-
-    if elem(readings,0) != []  do
-      Phoenix.PubSub.broadcast(
-        :secop_client_pubsub,
-        state.plot_publish_topic,
-        {host, port, module, parameter, {:plot_data, readings}}
-      )
-    end
-
-
-
-    # Reschedule once more
-    schedule_collection()
-
-    {:noreply, state}
+    {:reply, {:ok, readings}, state}
   end
 
   @impl true
