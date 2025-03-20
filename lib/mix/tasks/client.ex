@@ -9,19 +9,21 @@ defmodule Mix.Tasks.Client do
   def run(_args) do
     Mix.Task.run("app.start")
 
-    Process.sleep(2000)
+    Process.sleep(3000)
 
 
     node_map = SEC_Node_Supervisor.get_active_nodes()
 
-    all_entries = Registry.select(Registry.PlotPublisher,[{{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$2", :"$3"}}]}])
-    IO.inspect(all_entries, label: "All entries (key, PID pairs)")
+    IO.inspect(node_map, label: "Active nodes")
 
-    Registry.PlotPublisher
+    #all_entries = Registry.select(Registry.PlotPublisher,[{{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$2", :"$3"}}]}])
+    #IO.inspect(all_entries, label: "All entries (key, PID pairs)")
 
-    parameter_id = {~c"192.168.178.52", 10800,:massflow_contr1,:value}
+    #Registry.PlotPublisher
 
-    IO.inspect(PlotPublisher.get_data(parameter_id))
+    #parameter_id = {~c"192.168.178.52", 10800,:massflow_contr1,:value}
+
+    #IO.inspect(PlotPublisher.get_data(parameter_id))
 
 
 

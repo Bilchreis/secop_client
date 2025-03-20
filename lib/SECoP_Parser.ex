@@ -95,7 +95,7 @@ defmodule SECoP_Parser do
 
     Registry.dispatch(Registry.SEC_Node_Statem, node_id, fn entries ->
       for {pid, _value} <- entries do
-        send(pid, {:describe, specifier, parsed_description})
+        send(pid, {:describe, specifier, parsed_description, description})
       end
     end)
   end
@@ -230,7 +230,7 @@ defmodule SECoP_Parser do
     parsed_module_description
   end
 
-  def error_update(node_id, specifier, data) do
+  def error_update(_node_id, specifier, data) do
     Logger.warning("Error update message received. Specifier: #{specifier}, Data: #{data}")
   end
 

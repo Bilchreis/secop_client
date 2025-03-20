@@ -89,6 +89,7 @@ defmodule SEC_Node_Statem do
       equipment_id: nil,
       reconnect_backoff: opts[:reconnect_backoff] || 5000,
       description: nil,
+      raw_description: nil,
       active: false,
       uuid: UUID.uuid1(),
       error: false,
@@ -198,7 +199,7 @@ defmodule SEC_Node_Statem do
     Logger.info("Initial Describe Message sent")
 
     case send_describe_message(node_id) do
-      {:ok, _specifier, parsed_description} ->
+      {:ok, _specifier, parsed_description, raw_description} ->
         equipment_id = parsed_description[:properties][:equipment_id]
 
         case MapDiff.diff(parsed_description, description) do
@@ -230,6 +231,7 @@ defmodule SEC_Node_Statem do
             updated_state_descr = %{
               state
               | description: parsed_description,
+                raw_description: raw_description,
                 uuid: UUID.uuid1(),
                 equipment_id: equipment_id,
                 state: :initialized
@@ -278,7 +280,7 @@ defmodule SEC_Node_Statem do
     Logger.info("Describe Message sent")
 
     case send_describe_message(node_id) do
-      {:ok, _specifier, parsed_description} ->
+      {:ok, _specifier, parsed_description, raw_description} ->
         equipment_id = parsed_description[:properties][:equipment_id]
 
         case MapDiff.diff(parsed_description, description) do
@@ -294,6 +296,7 @@ defmodule SEC_Node_Statem do
             updated_state_descr = %{
               state
               | description: parsed_description,
+                raw_description: raw_description,
                 uuid: UUID.uuid1(),
                 equipment_id: equipment_id
             }
@@ -532,9 +535,9 @@ defmodule SEC_Node_Statem do
     TcpConnection.send_message(node_id, ~c"describe .\n")
 
     receive do
-      {:describe, specifier, parsed_description} ->
+      {:describe, specifier, parsed_description, raw_description} ->
         Logger.info("Description received")
-        {:ok, specifier, parsed_description}
+        {:ok, specifier, parsed_description, raw_description}
 
       {:error_describe, specifier, error_class, error_text, error_dict} ->
         Logger.error("Error on describe request: #{error_text}")
