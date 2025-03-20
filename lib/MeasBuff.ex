@@ -102,7 +102,7 @@ defmodule MeasBuff do
   @spec clean_up(t()) :: t()
   def clean_up(
         %MeasBuff{
-          buffer_value: buffer_value,
+          buffer_value: _buffer_value,
           buffer_timestamp: buffer_timestamp,
           buff_len: buff_len
         } = measbuff
