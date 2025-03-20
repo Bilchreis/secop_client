@@ -23,7 +23,7 @@ defmodule SecopClient.MixProject do
   defp deps do
     [
       {:jason, "~> 1.4"},
-      {:uuid, "~> 1.1"},
+      {:ecto, "~> 3.12"},
       {:map_diff, "~> 1.3"},
       {:phoenix_pubsub, "~> 2.0"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}

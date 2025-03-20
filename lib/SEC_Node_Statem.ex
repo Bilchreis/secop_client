@@ -1,7 +1,7 @@
 defmodule SEC_Node_Statem do
   require Logger
   alias NodeTable
-  alias UUID
+  alias Ecto
   alias TcpConnection
   alias SecNodePublisherSupervisor
 
@@ -91,7 +91,7 @@ defmodule SEC_Node_Statem do
       description: nil,
       raw_description: nil,
       active: false,
-      uuid: UUID.uuid1(),
+      uuid: Ecto.UUID.generate(),
       error: false,
       state: :disconnected
     }
@@ -232,7 +232,7 @@ defmodule SEC_Node_Statem do
               state
               | description: parsed_description,
                 raw_description: raw_description,
-                uuid: UUID.uuid1(),
+                uuid: Ecto.UUID.generate(),
                 equipment_id: equipment_id,
                 state: :initialized
             }
@@ -297,7 +297,7 @@ defmodule SEC_Node_Statem do
               state
               | description: parsed_description,
                 raw_description: raw_description,
-                uuid: UUID.uuid1(),
+                uuid: Ecto.UUID.generate(),
                 equipment_id: equipment_id
             }
 
@@ -508,7 +508,7 @@ defmodule SEC_Node_Statem do
         updated_state_descr = %{
           state
           | description: parsed_description,
-            uuid: UUID.uuid1(),
+            uuid: Ecto.UUID.generate(),
             equipment_id: equipment_id
         }
 
