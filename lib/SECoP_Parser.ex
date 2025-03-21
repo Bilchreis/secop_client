@@ -71,6 +71,12 @@ defmodule SECoP_Parser do
       {:value_update, pubsub_topic, data_report}
     )
 
+    Phoenix.PubSub.broadcast(
+      :secop_client_pubsub,
+      "value_update:#{elem(node_id, 0)}:#{elem(node_id, 1)}",
+      {:value_update, module, accessible, data_report}
+    )
+
     {:ok, module, accessible, data_report}
   end
 
