@@ -237,7 +237,7 @@ defmodule SECoP_Parser do
   end
 
   def error_update(_node_id, specifier, data) do
-    Logger.warning("Error update message received. Specifier: #{specifier}, Data: #{data}")
+    Logger.warning("Error update message received. Specifier: #{specifier}, Data: #{inspect(data)}")
   end
 
   def error_response(error_code, node_id, specifier, data) do
