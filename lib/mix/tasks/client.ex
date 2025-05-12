@@ -2,7 +2,7 @@ defmodule Mix.Tasks.Client do
   use Mix.Task
   alias SecopClient
   alias SEC_Node_Supervisor
-  alias PlotPublisher
+
 
   @shortdoc "Starts the SecopClient application and runs indefinitely"
 

@@ -18,7 +18,6 @@ defmodule SecopClient do
       {SEC_Node_Supervisor, []},
       {TcpConnectionSupervisor, []},
       {BufferSupervisor, []},
-      {SecNodePublisherSupervisor, []},
       {NodeDiscover, &SEC_Node_Supervisor.start_child_from_discovery/3}
     ]
 

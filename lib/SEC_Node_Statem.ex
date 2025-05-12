@@ -3,7 +3,7 @@ defmodule SEC_Node_Statem do
   alias NodeTable
   alias Ecto
   alias TcpConnection
-  alias SecNodePublisherSupervisor
+
 
   @behaviour :gen_statem
 
@@ -214,19 +214,6 @@ defmodule SEC_Node_Statem do
           _ ->
             Logger.info("Descriptive data changed issuing new uuid --> connected & initialized")
 
-            {:ok, empty_values_map} = SECoP_Parser.get_empty_values_map(parsed_description)
-
-            case Registry.lookup(Registry.SecNodePublisher, state.node_id) do
-              [] ->
-                SecNodePublisherSupervisor.start_child(
-                  host: state.host,
-                  port: state.port,
-                  values_map: empty_values_map
-                )
-
-              [{publisher_pid, _value}] ->
-                SecNodePublisher.set_values_map(publisher_pid, empty_values_map)
-            end
 
             updated_state_descr = %{
               state
