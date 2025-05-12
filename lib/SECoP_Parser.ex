@@ -67,12 +67,6 @@ defmodule SECoP_Parser do
 
     Phoenix.PubSub.broadcast(
       :secop_client_pubsub,
-      pubsub_topic,
-      {:value_update, pubsub_topic, data_report}
-    )
-
-    Phoenix.PubSub.broadcast(
-      :secop_client_pubsub,
       "value_update:#{elem(node_id, 0)}:#{elem(node_id, 1)}",
       {:value_update, module, accessible, data_report}
     )
@@ -228,8 +222,6 @@ defmodule SECoP_Parser do
       param_opts =
         Map.put(opts, :parameter, parameter) |> Map.put(:datainfo, param_descr.datainfo)
 
-
-        PlotPublisherSupervisor.start_child(param_opts)
 
     end
 
