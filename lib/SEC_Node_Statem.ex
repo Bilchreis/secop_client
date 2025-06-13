@@ -392,7 +392,7 @@ defmodule SEC_Node_Statem do
           "Command #{module}:#{command} executed and returned: #{Jason.encode!(data_report)}"
         )
 
-        {:keep_state_and_data, {:reply, from, {:changed, r_module, r_command, data_report}}}
+        {:keep_state_and_data, {:reply, from, {:done, r_module, r_command, data_report}}}
 
       {:error_do, specifier, error_class, error_text, error_dict} ->
         Logger.error("Error on do request: #{error_text}")
