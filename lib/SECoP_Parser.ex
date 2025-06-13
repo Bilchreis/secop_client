@@ -154,7 +154,11 @@ defmodule SECoP_Parser do
 
   def done(node_id, specifier, data) do
     Logger.debug("Command executed. Specifier: #{specifier}, Data: #{data}")
-    {:ok, module, command, data_report} = data_to_ets(node_id, specifier, data)
+
+    {:ok, data_report} = Jason.decode(data, keys: :atoms)
+
+    {:ok, module, command} = splitSpecifier(specifier)
+
 
     Registry.dispatch(Registry.SEC_Node_Statem, node_id, fn entries ->
       for {pid, _value} <- entries do
