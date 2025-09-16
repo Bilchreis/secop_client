@@ -58,9 +58,9 @@ defmodule SEC_Node_Statem do
     :gen_statem.call(sec_node_pid, {:change, module, parameter, value})
   end
 
-  def read(node_id, module, parameter, value) do
+  def read(node_id, module, parameter) do
     [{sec_node_pid, _value}] = Registry.lookup(Registry.SEC_Node_Statem, node_id)
-    :gen_statem.call(sec_node_pid, {:read, module, parameter, value})
+    :gen_statem.call(sec_node_pid, {:read, module, parameter})
   end
 
   def ping(node_id) do
@@ -406,11 +406,11 @@ defmodule SEC_Node_Statem do
 
   def handle_event(
         {:call, from},
-        {:read, module, parameter, value},
+        {:read, module, parameter},
         :initialized,
         %{node_id: node_id} = _state
       ) do
-    message = "read #{module}:#{parameter} #{value}\n"
+    message = "read #{module}:#{parameter}\n"
 
     Logger.info("Read Message '#{String.trim_trailing(message)}' sent")
     TcpConnection.send_message(node_id, String.to_charlist(message))
