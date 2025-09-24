@@ -3,8 +3,6 @@ defmodule SecopClient do
   alias NodeDiscover
   alias TcpConnection
   alias Buffer
-  alias BufferSupervisor
-  alias TcpConnectionSupervisor
   alias SEC_Node_Statem
   use Application
 
@@ -15,9 +13,8 @@ defmodule SecopClient do
       {Registry, keys: :unique, name: Registry.TcpConnection},
       {Registry, keys: :unique, name: Registry.SEC_Node_Statem},
       {Registry, keys: :unique, name: Registry.SecNodePublisher},
+      {Registry, keys: :unique, name: Registry.SEC_Node_Services},
       {SEC_Node_Supervisor, []},
-      {TcpConnectionSupervisor, []},
-      {BufferSupervisor, []},
       {NodeDiscover, &SEC_Node_Supervisor.start_child_from_discovery/3}
     ]
 

@@ -10,13 +10,6 @@ defmodule TcpConnection do
 
   ## Public API
 
-  def connect_supervised(opts) do
-    buffer_id = {opts[:host], opts[:port]}
-
-    BufferSupervisor.start_child(buffer_id)
-    TcpConnectionSupervisor.start_child(opts)
-  end
-
   def start_link(opts) do
     :gen_statem.start_link(
       {:via, Registry, {Registry.TcpConnection, {opts[:host], opts[:port]}}},
@@ -33,7 +26,7 @@ defmodule TcpConnection do
       id: __MODULE__,
       start: {__MODULE__, :start_link, [opts]},
       type: :worker,
-      restart: :permanent,
+      restart: :transient,
       shutdown: 500
     }
   end
@@ -131,6 +124,19 @@ defmodule TcpConnection do
     {:keep_state, state}
   end
 
+  def handle_event({:call, from}, :stop, _state, %{host: host, port: port} = state) do
+    # Close socket if connected
+    if state.socket, do: :gen_tcp.close(state.socket)
+
+    # Notify any listeners
+    Registry.dispatch(Registry.SEC_Node_Statem, {host, port}, fn entries ->
+      for {pid, _} <- entries, do: send(pid, :socket_disconnected)
+    end)
+
+    :gen_statem.reply(from, :ok)
+    {:stop, :normal, state}
+  end
+
   ## Helpers
   def is_connected(node_id) do
     [{conn_pid, _value}] = Registry.lookup(Registry.TcpConnection, node_id)
@@ -141,42 +147,17 @@ defmodule TcpConnection do
     [{conn_pid, _value}] = Registry.lookup(Registry.TcpConnection, node_id)
     :gen_statem.call(conn_pid, {:send, data})
   end
-end
 
-defmodule BufferSupervisor do
-  use DynamicSupervisor
-
-  def start_link(init_arg) do
-    DynamicSupervisor.start_link(__MODULE__, init_arg, name: __MODULE__)
-  end
-
-  @impl true
-  def init(_init_arg) do
-    DynamicSupervisor.init(strategy: :one_for_one)
-  end
-
-  def start_child(buffer_identifier) do
-    DynamicSupervisor.start_child(__MODULE__, {Buffer, buffer_identifier})
+  def stop(node_id) do
+    case Registry.lookup(Registry.TcpConnection, node_id) do
+      [{conn_pid, _}] ->
+        :gen_statem.call(conn_pid, :stop)
+      [] ->
+        {:error, :not_found}
+    end
   end
 end
 
-defmodule TcpConnectionSupervisor do
-  # Automatically defines child_spec/1
-  use DynamicSupervisor
-
-  def start_link(init_arg) do
-    DynamicSupervisor.start_link(__MODULE__, init_arg, name: __MODULE__)
-  end
-
-  @impl true
-  def init(_init_arg) do
-    DynamicSupervisor.init(strategy: :one_for_one)
-  end
-
-  def start_child(opts) do
-    DynamicSupervisor.start_child(__MODULE__, {TcpConnection, opts})
-  end
-end
 
 defmodule Buffer do
   @moduledoc "Buffer the data received to parse out statements"
@@ -239,4 +220,7 @@ defmodule Buffer do
       [rest] -> {:nothing, rest}
     end
   end
+
+
+
 end
