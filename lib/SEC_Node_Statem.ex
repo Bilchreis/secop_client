@@ -7,7 +7,7 @@ defmodule SEC_Node_Statem do
 
   @behaviour :gen_statem
 
-  @initial_state :disconnected
+  @initial_state :connecting
 
   # Public
   def start_link(opts) do
@@ -26,7 +26,7 @@ defmodule SEC_Node_Statem do
       id: {opts[:host], opts[:port]},
       start: {__MODULE__, :start_link, [opts]},
       type: :worker,
-      restart: :permanent,
+      restart: opts[:restart] || :permanent,
       shutdown: 500
     }
   end
@@ -93,20 +93,40 @@ defmodule SEC_Node_Statem do
       active: false,
       uuid: Ecto.UUID.generate(),
       error: false,
-      state: :disconnected
+      state: :disconnected,
+      manual: opts[:manual] || false
     }
 
     Logger.info("opening connection")
     TcpConnection.connect_supervised(opts)
 
-    NodeTable.start(state.node_id)
 
-    publish_new_node(state, state.pubsub_topic)
 
     {:ok, @initial_state, state, {:next_event, :internal, :connect}}
   end
 
   @impl :gen_statem
+  def handle_event(:internal, :connect, :connecting, %{node_id: node_id, manual: manual} = state) do
+    case TcpConnection.is_connected(node_id) do
+      true ->
+        updated_state = %{state | state: :connected}
+        NodeTable.start(state.node_id)
+        publish_new_node(state, state.pubsub_topic)
+        {:next_state, :connected, updated_state, {:next_event, :internal, :handshake}}
+
+      false ->
+        if manual do
+          Logger.warning("Manual connection failed!! stopping SEC-Node-Statemachine for: #{inspect(node_id)}")
+          {:stop, :normal}
+        else
+          updated_state = %{state | state: :disconnected}
+          publish_statechange(updated_state, state.pubsub_topic)
+          {:next_state, :disconnected, updated_state, {{:timeout, :reconnect}, 5000, nil}}
+        end
+    end
+  end
+
+
   def handle_event(:internal, :connect, :disconnected, %{node_id: node_id} = state) do
     case TcpConnection.is_connected(node_id) do
       true ->
@@ -254,7 +274,7 @@ defmodule SEC_Node_Statem do
   end
 
   def handle_event({:call, from}, :get_state, state_name, state)
-      when state_name in [:initialized, :connected, :disconnected] do
+      when state_name in [:initialized, :connected, :disconnected, :connecting] do
     {:keep_state_and_data, {:reply, from, {:ok, state}}}
   end
 
@@ -626,7 +646,7 @@ defmodule SEC_Node_Supervisor do
   end
 
   def start_child(opts) do
-    DynamicSupervisor.start_child(__MODULE__, {SEC_Node_Services, opts})
+    DynamicSupervisor.start_child(__MODULE__, {SEC_Node_Services, Map.put(opts, :restart, :transient)})
   end
 
   def get_active_nodes() do
