@@ -7,11 +7,10 @@ defmodule SEC_Node_Statem do
 
   @behaviour :gen_statem
 
-  @initial_state :disconnected
+  @initial_state :connecting
 
   # Public
   def start_link(opts) do
-    Logger.info("starting secnode")
 
     :gen_statem.start_link(
       {:via, Registry, {Registry.SEC_Node_Statem, {opts[:host], opts[:port]}}},
@@ -26,7 +25,7 @@ defmodule SEC_Node_Statem do
       id: {opts[:host], opts[:port]},
       start: {__MODULE__, :start_link, [opts]},
       type: :worker,
-      restart: :permanent,
+      restart: opts[:restart] || :permanent,
       shutdown: 500
     }
   end
@@ -93,20 +92,40 @@ defmodule SEC_Node_Statem do
       active: false,
       uuid: Ecto.UUID.generate(),
       error: false,
-      state: :disconnected
+      state: :disconnected,
+      manual: opts[:manual] || false
     }
 
-    Logger.info("opening connection")
-    TcpConnection.connect_supervised(opts)
+    Logger.info("Starting SEC Node State Machine for: #{opts[:host]}:#{opts[:port]}")
 
-    NodeTable.start(state.node_id)
-
-    publish_new_node(state, state.pubsub_topic)
-
+    # No need to manually start TCP connection - supervisor handles it
     {:ok, @initial_state, state, {:next_event, :internal, :connect}}
   end
 
   @impl :gen_statem
+  def handle_event(:internal, :connect, :connecting, %{node_id: node_id, manual: manual} = state) do
+    case TcpConnection.is_connected(node_id) do
+      true ->
+        updated_state = %{state | state: :connected}
+        NodeTable.start(state.node_id)
+        publish_new_node(state, state.pubsub_topic)
+        {:next_state, :connected, updated_state, {:next_event, :internal, :handshake}}
+
+      false ->
+        if manual do
+          Logger.warning("Manual connection failed!! stopping all services for: #{inspect(node_id)}")
+          publish_new_node(:connection_failed, state.pubsub_topic)
+          SEC_Node_Services.stop(node_id)
+          {:stop, :normal}
+        else
+          updated_state = %{state | state: :disconnected}
+          publish_statechange(updated_state, state.pubsub_topic)
+          {:next_state, :disconnected, updated_state, {{:timeout, :reconnect}, 5000, nil}}
+        end
+    end
+  end
+
+
   def handle_event(:internal, :connect, :disconnected, %{node_id: node_id} = state) do
     case TcpConnection.is_connected(node_id) do
       true ->
@@ -254,7 +273,7 @@ defmodule SEC_Node_Statem do
   end
 
   def handle_event({:call, from}, :get_state, state_name, state)
-      when state_name in [:initialized, :connected, :disconnected] do
+      when state_name in [:initialized, :connected, :disconnected, :connecting] do
     {:keep_state_and_data, {:reply, from, {:ok, state}}}
   end
 
@@ -596,16 +615,47 @@ defmodule SEC_Node_Services do
   require Logger
 
   def start_link(opts) do
-    Supervisor.start_link(__MODULE__, opts)
+    node_id = {opts[:host], opts[:port]}
+    Supervisor.start_link(__MODULE__, opts,
+      name: {:via, Registry, {Registry.SEC_Node_Services, node_id}})
+  end
+
+  def stop(node_id) do
+    case Registry.lookup(Registry.SEC_Node_Services, node_id) do
+      [{supervisor_pid, _}] ->
+        Supervisor.stop(supervisor_pid, :normal)
+      [] ->
+        {:error, :not_found}
+    end
   end
 
   @impl true
   def init(opts) do
+    node_id = {opts[:host], opts[:port]}
+
     children = [
+      # Buffer process for this specific node
+      {Buffer, node_id},
+      # TCP connection for this specific node
+      {TcpConnection, opts},
+      # Main state machine for this node
       {SEC_Node_Statem, opts}
     ]
 
-    Supervisor.init(children, strategy: :one_for_one)
+    # Use :rest_for_one strategy - if SEC_Node_Statem crashes,
+    # restart it but keep TCP connection and buffer
+    # If TCP connection crashes, restart it and SEC_Node_Statem
+    Supervisor.init(children, strategy: :rest_for_one)
+  end
+
+  def child_spec(opts) do
+    %{
+      id: {opts[:host], opts[:port]},
+      start: {__MODULE__, :start_link, [opts]},
+      type: :supervisor,
+      restart: :transient,
+      shutdown: :infinity
+    }
   end
 end
 
@@ -626,7 +676,7 @@ defmodule SEC_Node_Supervisor do
   end
 
   def start_child(opts) do
-    DynamicSupervisor.start_child(__MODULE__, {SEC_Node_Services, opts})
+    DynamicSupervisor.start_child(__MODULE__, {SEC_Node_Services, Map.put(opts, :restart, :transient)})
   end
 
   def get_active_nodes() do
