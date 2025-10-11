@@ -63,7 +63,6 @@ defmodule SECoP_Parser do
         data_report
       )
 
-    pubsub_topic = "#{elem(node_id, 0)}:#{elem(node_id, 1)}:#{specifier}"
 
     Phoenix.PubSub.broadcast(
       :secop_client_pubsub,
@@ -88,7 +87,7 @@ defmodule SECoP_Parser do
       port: elem(node_id, 1)
     }
 
-    parsed_description = parse__node_description(description, opts)
+    parsed_description = parse_node_description(description, opts)
 
     {:ok, :inserted} = NodeTable.insert(node_id, :description, parsed_description)
     {:ok, :inserted} = NodeTable.insert(node_id, :raw_description, description)
@@ -185,7 +184,7 @@ defmodule SECoP_Parser do
     {:ok, empty_values_map}
   end
 
-  def parse__node_description(description, opts) do
+  def parse_node_description(description, opts) do
     node_descripttion = %{
       properties: Map.drop(description, [:modules])
     }
@@ -203,7 +202,7 @@ defmodule SECoP_Parser do
     node_descripttion
   end
 
-  def parse_module_description(module_description, opts) do
+  def parse_module_description(module_description, _opts) do
     {parameters, commands} =
       Enum.reduce(module_description[:accessibles], {%{}, %{}}, fn {accessible_name,
                                                                     accessible_data},
@@ -222,18 +221,23 @@ defmodule SECoP_Parser do
       commands: commands
     }
 
-    for {parameter, param_descr} <- parameters do
-      param_opts =
-        Map.put(opts, :parameter, parameter) |> Map.put(:datainfo, param_descr.datainfo)
-
-
-    end
 
     parsed_module_description
   end
 
-  def error_update(_node_id, specifier, data) do
+  def error_update(node_id, specifier, data) do
     Logger.warning("Error update message received. Specifier: #{specifier}, Data: #{inspect(data)}")
+
+    {:ok, error_report} = Jason.decode(data, keys: :atoms)
+
+    {:ok, module, accessible} = splitSpecifier(specifier)
+
+    Phoenix.PubSub.broadcast(
+      :secop_client_pubsub,
+      "error_update:#{elem(node_id, 0)}:#{elem(node_id, 1)}",
+      {:error_update, module, accessible, error_report}
+    )
+
   end
 
   def error_response(error_code, node_id, specifier, data) do
