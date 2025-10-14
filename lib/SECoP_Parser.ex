@@ -225,10 +225,10 @@ defmodule SECoP_Parser do
     parsed_module_description
   end
 
-  def error_update(node_id, specifier, data) do
-    Logger.warning("Error update message received. Specifier: #{specifier}, Data: #{inspect(data)}")
+  def error_update(node_id, specifier, error_report) do
+    Logger.warning("Error update message received. Specifier: #{specifier}, Data: #{inspect(error_report)}")
 
-    {:ok, error_report} = Jason.decode(data, keys: :atoms)
+
 
     {:ok, module, accessible} = splitSpecifier(specifier)
 
@@ -240,10 +240,10 @@ defmodule SECoP_Parser do
 
   end
 
-  def error_response(error_code, node_id, specifier, data) do
-    error_class = Enum.at(data, 0)
-    error_text = Enum.at(data, 1)
-    error_dict = Enum.at(data, 2)
+  def error_response(error_code, node_id, specifier, error_report) do
+    error_class = Enum.at(error_report, 0)
+    error_text = Enum.at(error_report, 1)
+    error_dict = Enum.at(error_report, 2)
 
     Registry.dispatch(Registry.SEC_Node_Statem, node_id, fn entries ->
       for {pid, _value} <- entries do
