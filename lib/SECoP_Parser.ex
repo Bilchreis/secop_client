@@ -228,9 +228,18 @@ defmodule SECoP_Parser do
   def error_update(node_id, specifier, error_report) do
     Logger.warning("Error update message received. Specifier: #{specifier}, Data: #{inspect(error_report)}")
 
-
-
     {:ok, module, accessible} = splitSpecifier(specifier)
+
+    {:ok, :inserted} =
+      NodeTable.insert(
+        node_id,
+        {:data_report, String.to_existing_atom(module), String.to_existing_atom(accessible)},
+        %{error_report: error_report}
+      )
+
+
+
+
 
     Phoenix.PubSub.broadcast(
       :secop_client_pubsub,
