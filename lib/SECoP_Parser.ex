@@ -234,7 +234,7 @@ defmodule SECoP_Parser do
       NodeTable.insert(
         node_id,
         {:data_report, String.to_existing_atom(module), String.to_existing_atom(accessible)},
-        %{error_report: error_report}
+        {:error_report, error_report}
       )
 
 
