@@ -114,6 +114,11 @@ defmodule TcpConnection do
     {:keep_state, state}
   end
 
+  # Handle send attempts while disconnected
+  def handle_event({:call, from}, {:send, _message}, :disconnected, _state) do
+    {:keep_state_and_data, {:reply, from, {:error, :not_connected}}}
+  end
+
   def handle_event({:call, from}, :is_connected, :connected, state) do
     :gen_statem.reply(from, true)
     {:keep_state, state}
