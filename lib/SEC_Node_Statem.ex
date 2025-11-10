@@ -744,11 +744,16 @@ defmodule NodeTable do
   end
 
   def lookup(node_id, key) do
-    {:ok, table} = get_table(node_id)
 
-    case :ets.lookup(table, key) do
-      [{_, value}] -> {:ok, value}
-      [] -> {:error, :notfound}
+    try do
+      {:ok, table} = get_table(node_id)
+
+      case :ets.lookup(table, key) do
+        [{_, value}] -> {:ok, value}
+        [] -> {:error, :notfound}
+      end
+    rescue
+      ArgumentError -> {:error, :table_not_found}
     end
   end
 
